@@ -39,6 +39,7 @@ export function setDateRange(range) {
   const now = new Date();
   const end = now.toISOString().split('T')[0];
   let start;
+
   if (range === 'week') {
     const d = new Date(now);
     d.setDate(d.getDate() - 7);
@@ -48,10 +49,40 @@ export function setDateRange(range) {
     start = d.toISOString().split('T')[0];
     const endD = new Date(now.getFullYear(), now.getMonth(), 0);
     return { start, end: endD.toISOString().split('T')[0] };
+  } else if (range === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   } else {
+    // Support specific month names: "jan", "feb", "march", "october", etc.
+    const monthMap = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+      apr: 3, april: 3, may: 4, jun: 5, june: 5,
+      jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
+      oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+    };
+    const monthIdx = monthMap[range.toLowerCase()];
+    if (monthIdx !== undefined) {
+      // Use current year, but if the month is in the future, use last year
+      let year = now.getFullYear();
+      if (monthIdx > now.getMonth()) year--;
+      const first = new Date(year, monthIdx, 1);
+      const last = new Date(year, monthIdx + 1, 0);
+      return {
+        start: first.toISOString().split('T')[0],
+        end: last.toISOString().split('T')[0]
+      };
+    }
+    // Default: this month
     start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   }
   return { start, end };
+}
+
+// Get the most recent complete month name and range key
+export function getRecentCompleteMonth() {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return { name: names[prevMonth.getMonth()], key: names[prevMonth.getMonth()].toLowerCase() };
 }
 
 // Escape HTML

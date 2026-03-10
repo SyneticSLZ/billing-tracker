@@ -1,6 +1,6 @@
 import { store } from '../state.js';
 import { fetchBillingData, getEntries, clearAllEntries } from '../api.js';
-import { toast, setDateRange as getDateRange, escapeHtml, getTypeColor } from '../utils.js';
+import { toast, setDateRange as getDateRange, getRecentCompleteMonth, escapeHtml, getTypeColor } from '../utils.js';
 import { renderStatsBar } from './statsBar.js';
 import { renderDonutChart, renderBarChart } from './chartPanel.js';
 import { showProgress, hideProgress, setProgress } from './progressBar.js';
@@ -10,6 +10,29 @@ import { open as openDrilldown } from './drilldownPanel.js';
 import { openEditModal } from './editModal.js';
 import { updateNavBadges } from './nav.js';
 import { navigate } from '../router.js';
+
+function buildMonthButtons() {
+  const now = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fullNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+  const recent = getRecentCompleteMonth();
+  const buttons = [];
+
+  // Show last 12 months (most recent first)
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mIdx = d.getMonth();
+    const year = d.getFullYear();
+    const key = fullNames[mIdx];
+    const isCurrent = (mIdx === now.getMonth() && year === now.getFullYear());
+    const isRecent = (key === recent.key && year === now.getFullYear()) || (key === recent.key && year === now.getFullYear() - 1 && now.getMonth() === 0);
+    const label = `${months[mIdx]} ${year !== now.getFullYear() ? year : ''}`.trim();
+    const cls = isRecent ? 'btn btn-accent btn-sm' : 'btn btn-ghost btn-sm';
+    buttons.push(`<button class="${cls}" data-range="${key}" data-year="${year}" title="${isCurrent ? 'Current month (incomplete)' : ''}">${label}${isRecent ? ' (latest)' : ''}</button>`);
+  }
+
+  return buttons.join('');
+}
 
 export function renderDashboard(container) {
   const dates = getDateRange(store.settings.defaultDateRange || 'month');
@@ -30,6 +53,11 @@ export function renderDashboard(container) {
         <button class="btn btn-ghost btn-sm" data-range="week">This Week</button>
         <button class="btn btn-ghost btn-sm" data-range="month">This Month</button>
         <button class="btn btn-ghost btn-sm" data-range="lastMonth">Last Month</button>
+        <span class="quick-actions-sep"></span>
+        <button class="btn btn-ghost btn-sm" id="month-picker-toggle">Pick Month</button>
+      </div>
+      <div class="month-picker" id="month-picker" style="display:none">
+        ${buildMonthButtons()}
       </div>
     </div>
 
@@ -132,11 +160,43 @@ export function renderDashboard(container) {
   const fetchBtn = container.querySelector('#fetch-btn');
   fetchBtn.addEventListener('click', () => handleFetch(container));
 
+  // Month picker toggle
+  const monthPickerToggle = container.querySelector('#month-picker-toggle');
+  const monthPicker = container.querySelector('#month-picker');
+  monthPickerToggle.addEventListener('click', () => {
+    const visible = monthPicker.style.display !== 'none';
+    monthPicker.style.display = visible ? 'none' : 'flex';
+    monthPickerToggle.textContent = visible ? 'Pick Month' : 'Hide Months';
+  });
+
   container.querySelectorAll('[data-range]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const range = getDateRange(btn.dataset.range);
+      let range;
+      // If button has a specific year (month picker), compute exact range
+      if (btn.dataset.year) {
+        const year = parseInt(btn.dataset.year);
+        const monthMap = {
+          january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+          july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+        };
+        const mIdx = monthMap[btn.dataset.range];
+        if (mIdx !== undefined) {
+          const first = new Date(year, mIdx, 1);
+          const last = new Date(year, mIdx + 1, 0);
+          range = { start: first.toISOString().split('T')[0], end: last.toISOString().split('T')[0] };
+        } else {
+          range = getDateRange(btn.dataset.range);
+        }
+      } else {
+        range = getDateRange(btn.dataset.range);
+      }
       container.querySelector('#start-date').value = range.start;
       container.querySelector('#end-date').value = range.end;
+      // Collapse month picker after selection
+      if (monthPicker.contains(btn)) {
+        monthPicker.style.display = 'none';
+        monthPickerToggle.textContent = 'Pick Month';
+      }
     });
   });
 

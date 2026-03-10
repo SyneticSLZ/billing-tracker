@@ -91,6 +91,41 @@
   flex-wrap: wrap;
 }
 
+/* ─── MONTH PICKER ─── */
+.quick-actions-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  align-self: center;
+  margin: 0 2px;
+}
+
+.month-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.month-picker .btn {
+  min-width: 60px;
+  font-size: 0.72rem;
+}
+
+.btn-accent {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.btn-accent:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
 /* ─── UPLOAD ZONE ─── */
 .upload-zone {
   background: var(--surface);
