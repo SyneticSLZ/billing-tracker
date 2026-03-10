@@ -1,0 +1,25 @@
+{
+  "name": "billing-tracker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@azure/msal-node": "^5.0.6",
+    "axios": "^1.13.6",
+    "csv-parse": "^6.1.0",
+    "csv-stringify": "^6.6.0",
+    "dayjs": "^1.11.19",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "msal-node": "^0.0.1-security",
+    "multer": "^2.1.1",
+    "openai": "^6.27.0"
+  }
+}

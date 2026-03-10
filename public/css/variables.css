@@ -1,0 +1,28 @@
+:root {
+  --bg: #0d0f14;
+  --surface: #161a22;
+  --surface2: #1e2330;
+  --surface3: #252b3b;
+  --border: #2a3044;
+  --border-light: #353d55;
+  --accent: #4fd1c5;
+  --accent2: #667eea;
+  --accent-dim: rgba(79, 209, 197, 0.15);
+  --accent2-dim: rgba(102, 126, 234, 0.15);
+  --text: #e8eaf0;
+  --text-secondary: #b8bdd0;
+  --muted: #7a8499;
+  --success: #48bb78;
+  --warning: #ed8936;
+  --danger: #fc8181;
+  --email-color: #667eea;
+  --teams-color: #4fd1c5;
+  --call-color: #ed8936;
+  --meeting-color: #b794f4;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
+  --header-height: 56px;
+  --transition: 0.2s ease;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
