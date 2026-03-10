@@ -159,6 +159,74 @@
   margin-top: 6px;
 }
 
+/* ─── PROGRESS SOURCE INDICATORS ─── */
+.progress-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  transition: all 0.3s ease;
+  opacity: 0.4;
+}
+
+.progress-source.done {
+  border-color: var(--success);
+  opacity: 1;
+}
+
+.progress-source.done .progress-source-count {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.progress-source.fetching {
+  border-color: var(--accent);
+  opacity: 1;
+  animation: sourcePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sourcePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(79, 209, 197, 0.15); }
+}
+
+.progress-source-icon { font-size: 0.9rem; }
+
+.progress-source-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.progress-source-count {
+  font-family: 'DM Mono', monospace;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+/* ─── AI LIVE FEED ─── */
+.ai-feed-row {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: feedSlideIn 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes feedSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ─── CHARTS ─── */
 .charts-row {
   display: grid;

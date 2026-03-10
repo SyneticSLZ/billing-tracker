@@ -32,33 +32,54 @@ router.post('/fetch', requireAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const sendProgress = (message, percent) => {
-      res.write(`data: ${JSON.stringify({ type: 'progress', message, percent })}\n\n`);
-    };
-
     const token = req.session.accessToken;
 
-    sendProgress('Fetching emails from Outlook...', 15);
+    // Helper to send SSE events
+    const sendEvent = (eventData) => {
+      res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+    };
+
+    // ── Phase 1: Fetch from sources ──
+    sendEvent({ type: 'progress', message: 'Fetching emails from Outlook...', percent: 10, phase: 'fetch', source: 'emails' });
     const emails = await getEmails(token, startDate, endDate, emailLimit || 250);
+    sendEvent({ type: 'source-done', source: 'emails', count: emails.length, message: `Found ${emails.length} emails`, percent: 25 });
 
-    sendProgress(`Found ${emails.length} emails. Fetching calendar & Teams meetings...`, 35);
+    sendEvent({ type: 'progress', message: 'Fetching calendar & Teams meetings...', percent: 30, phase: 'fetch', source: 'meetings' });
     const events = await getCalendarEvents(token, startDate, endDate);
+    sendEvent({ type: 'source-done', source: 'meetings', count: events.length, message: `Found ${events.length} meetings`, percent: 40 });
 
-    sendProgress(`Found ${events.length} meetings. Fetching Teams chat messages...`, 55);
+    sendEvent({ type: 'progress', message: 'Fetching Teams chat messages...', percent: 45, phase: 'fetch', source: 'teams' });
     const teamsMessages = await getTeamsMessages(token, startDate, endDate, chatLimit || 50, messagesPerChat || 50);
+    sendEvent({ type: 'source-done', source: 'teams', count: teamsMessages.length, message: `Found ${teamsMessages.length} Teams messages`, percent: 55 });
 
-    sendProgress(`Found ${teamsMessages.length} Teams messages. Fetching call records...`, 70);
+    sendEvent({ type: 'progress', message: 'Checking call records...', percent: 58, phase: 'fetch', source: 'calls' });
     const callRecords = await getCallRecords(token, startDate, endDate);
+    sendEvent({ type: 'source-done', source: 'calls', count: callRecords.length, message: `Found ${callRecords.length} call records`, percent: 62 });
 
-    sendProgress('Extracting billing information with AI...', 80);
-
+    // ── Phase 2: Convert to billing items ──
     let allItems = [
       ...emailsToBillingItems(emails),
       ...eventsToBillingItems(events),
       ...teamsMessagesToBillingItems(teamsMessages),
     ];
 
-    allItems = await extractBillingInfo(allItems);
+    const totalItems = allItems.length;
+    sendEvent({ type: 'progress', message: `Processing ${totalItems} items with AI...`, percent: 65, phase: 'ai', totalItems });
+
+    // ── Phase 3: AI extraction with per-batch streaming ──
+    allItems = await extractBillingInfo(allItems, (processed, total, batchItems) => {
+      const aiPct = 65 + Math.round((processed / total) * 30); // 65% to 95%
+      const formattedBatch = batchItems.map(formatEntry);
+      sendEvent({
+        type: 'ai-batch',
+        processed,
+        total,
+        percent: aiPct,
+        message: `AI processing: ${processed}/${total} items`,
+        items: formattedBatch
+      });
+    });
+
     allItems = allItems.map(formatEntry);
 
     // Store raw data for drill-downs
@@ -70,8 +91,8 @@ router.post('/fetch', requireAuth, async (req, res) => {
     };
     req.session.billingItems = allItems;
 
-    sendProgress('Done!', 100);
-    res.write(`data: ${JSON.stringify({ type: 'complete', items: allItems, count: allItems.length })}\n\n`);
+    sendEvent({ type: 'progress', message: 'Done!', percent: 100, phase: 'done' });
+    sendEvent({ type: 'complete', items: allItems, count: allItems.length });
     res.end();
 
   } catch (err) {

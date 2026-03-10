@@ -47,13 +47,45 @@ export function renderDashboard(container) {
     <!-- Progress -->
     <div class="progress-section" id="progress-section">
       <div class="progress-header">
-        <span>Fetching billing data...</span>
+        <span id="progress-title">Fetching billing data...</span>
         <span class="progress-pct">0%</span>
       </div>
       <div class="progress-bar-wrap">
         <div class="progress-bar-fill"></div>
       </div>
       <div class="progress-message">Starting...</div>
+
+      <!-- Source indicators -->
+      <div class="progress-sources" id="progress-sources" style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+        <div class="progress-source" data-source="emails">
+          <span class="progress-source-icon">📧</span>
+          <span class="progress-source-label">Emails</span>
+          <span class="progress-source-count" data-count="emails">...</span>
+        </div>
+        <div class="progress-source" data-source="meetings">
+          <span class="progress-source-icon">📅</span>
+          <span class="progress-source-label">Meetings</span>
+          <span class="progress-source-count" data-count="meetings">...</span>
+        </div>
+        <div class="progress-source" data-source="teams">
+          <span class="progress-source-icon">💬</span>
+          <span class="progress-source-label">Teams</span>
+          <span class="progress-source-count" data-count="teams">...</span>
+        </div>
+        <div class="progress-source" data-source="calls">
+          <span class="progress-source-icon">📞</span>
+          <span class="progress-source-label">Calls</span>
+          <span class="progress-source-count" data-count="calls">...</span>
+        </div>
+      </div>
+
+      <!-- AI processing live feed -->
+      <div id="ai-live-feed" style="display:none;margin-top:12px">
+        <div style="font-size:0.72rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px">
+          AI Processing <span id="ai-counter">0/0</span>
+        </div>
+        <div id="ai-feed-items" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:3px"></div>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -142,31 +174,93 @@ async function handleFetch(container) {
 
   const fetchBtn = container.querySelector('#fetch-btn');
   const progressEl = container.querySelector('#progress-section');
+  const aiFeed = container.querySelector('#ai-live-feed');
+  const aiFeedItems = container.querySelector('#ai-feed-items');
+  const aiCounter = container.querySelector('#ai-counter');
 
   fetchBtn.disabled = true;
   fetchBtn.textContent = 'Fetching...';
   showProgress(progressEl);
   setProgress(progressEl, 0, 'Connecting to Microsoft 365...');
 
+  // Reset source indicators
+  container.querySelectorAll('.progress-source').forEach(el => {
+    el.style.opacity = '0.4';
+    el.querySelector('.progress-source-count').textContent = '...';
+  });
+  aiFeed.style.display = 'none';
+  aiFeedItems.innerHTML = '';
+
   try {
     const response = await fetchBillingData(startDate, endDate, store.settings);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
       for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'progress') setProgress(progressEl, data.percent, data.message);
+
+          if (data.type === 'progress') {
+            setProgress(progressEl, data.percent, data.message);
+            // Highlight active source
+            if (data.source) {
+              const srcEl = container.querySelector(`.progress-source[data-source="${data.source}"]`);
+              if (srcEl) {
+                srcEl.style.opacity = '1';
+                srcEl.classList.add('fetching');
+              }
+            }
+            // Show AI feed when entering AI phase
+            if (data.phase === 'ai') {
+              aiFeed.style.display = 'block';
+              aiCounter.textContent = `0/${data.totalItems || '?'}`;
+            }
+          }
+
+          if (data.type === 'source-done') {
+            setProgress(progressEl, data.percent, data.message);
+            const srcEl = container.querySelector(`.progress-source[data-source="${data.source}"]`);
+            if (srcEl) {
+              srcEl.style.opacity = '1';
+              srcEl.classList.remove('fetching');
+              srcEl.classList.add('done');
+              srcEl.querySelector('.progress-source-count').textContent = data.count;
+            }
+          }
+
+          if (data.type === 'ai-batch') {
+            setProgress(progressEl, data.percent, data.message);
+            aiCounter.textContent = `${data.processed}/${data.total}`;
+            // Add streamed items to the live feed
+            if (data.items) {
+              data.items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'ai-feed-row';
+                const typeClass = (item.type || '').toLowerCase().includes('email') ? 'type-email'
+                  : (item.type || '').toLowerCase().includes('teams') || (item.type || '').toLowerCase().includes('meeting') ? 'type-teams'
+                  : 'type-call';
+                row.innerHTML = `<span class="type-badge ${typeClass}" style="font-size:0.6rem;padding:1px 5px">${escapeHtml(item.type || '')}</span> <span style="color:var(--accent);font-weight:500">${escapeHtml(item.client || 'UNKNOWN')}</span> <span style="color:var(--muted)">—</span> <span style="color:var(--text-secondary)">${escapeHtml((item.activityDescription || item.subject || '').substring(0, 60))}</span>`;
+                aiFeedItems.appendChild(row);
+                aiFeedItems.scrollTop = aiFeedItems.scrollHeight;
+              });
+            }
+          }
+
           if (data.type === 'complete') {
             store.billingItems = data.items;
             refreshDashboard(container);
             toast(`${data.count} entries loaded`);
           }
+
           if (data.type === 'error') toast('Error: ' + data.message, true);
         } catch { /* skip bad JSON */ }
       }

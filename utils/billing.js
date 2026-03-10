@@ -29,14 +29,16 @@ function formatEntry(entry) {
   };
 }
 
-async function extractBillingInfo(items) {
+async function extractBillingInfo(items, onProgress = null) {
   if (!items.length) return [];
   if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'PASTE_YOUR_OPENAI_KEY_HERE') {
-    return items.map(item => ({
+    const result = items.map(item => ({
       ...item,
       client: item.rawClient || 'UNKNOWN - Please fill in',
       activityDescription: item.rawDescription || item.subject || 'Review and fill in'
     }));
+    if (onProgress) onProgress(items.length, items.length, result);
+    return result;
   }
 
   const openai = getOpenAI();
@@ -78,6 +80,7 @@ Respond ONLY with a JSON array: [{"index": N, "client": "...", "activityDescript
       });
     }
     results.push(...batch);
+    if (onProgress) onProgress(results.length, items.length, batch);
   }
   return results;
 }
