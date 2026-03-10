@@ -79,12 +79,11 @@ export function renderDashboard(container) {
         </div>
       </div>
 
-      <!-- AI processing live feed -->
-      <div id="ai-live-feed" style="display:none;margin-top:12px">
-        <div style="font-size:0.72rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px">
+      <!-- AI processing counter -->
+      <div id="ai-live-feed" style="display:none;margin-top:8px">
+        <div style="font-size:0.72rem;color:var(--muted);font-family:'DM Mono',monospace">
           AI Processing <span id="ai-counter">0/0</span>
         </div>
-        <div id="ai-feed-items" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:3px"></div>
       </div>
     </div>
 
@@ -175,7 +174,6 @@ async function handleFetch(container) {
   const fetchBtn = container.querySelector('#fetch-btn');
   const progressEl = container.querySelector('#progress-section');
   const aiFeed = container.querySelector('#ai-live-feed');
-  const aiFeedItems = container.querySelector('#ai-feed-items');
   const aiCounter = container.querySelector('#ai-counter');
 
   fetchBtn.disabled = true;
@@ -189,7 +187,10 @@ async function handleFetch(container) {
     el.querySelector('.progress-source-count').textContent = '...';
   });
   aiFeed.style.display = 'none';
-  aiFeedItems.innerHTML = '';
+
+  // Clear existing items for fresh fetch
+  store.billingItems = [];
+  refreshDashboard(container);
 
   try {
     const response = await fetchBillingData(startDate, endDate, store.settings);
@@ -211,7 +212,6 @@ async function handleFetch(container) {
 
           if (data.type === 'progress') {
             setProgress(progressEl, data.percent, data.message);
-            // Highlight active source
             if (data.source) {
               const srcEl = container.querySelector(`.progress-source[data-source="${data.source}"]`);
               if (srcEl) {
@@ -219,7 +219,6 @@ async function handleFetch(container) {
                 srcEl.classList.add('fetching');
               }
             }
-            // Show AI feed when entering AI phase
             if (data.phase === 'ai') {
               aiFeed.style.display = 'block';
               aiCounter.textContent = `0/${data.totalItems || '?'}`;
@@ -240,22 +239,15 @@ async function handleFetch(container) {
           if (data.type === 'ai-batch') {
             setProgress(progressEl, data.percent, data.message);
             aiCounter.textContent = `${data.processed}/${data.total}`;
-            // Add streamed items to the live feed
-            if (data.items) {
-              data.items.forEach(item => {
-                const row = document.createElement('div');
-                row.className = 'ai-feed-row';
-                const typeClass = (item.type || '').toLowerCase().includes('email') ? 'type-email'
-                  : (item.type || '').toLowerCase().includes('teams') || (item.type || '').toLowerCase().includes('meeting') ? 'type-teams'
-                  : 'type-call';
-                row.innerHTML = `<span class="type-badge ${typeClass}" style="font-size:0.6rem;padding:1px 5px">${escapeHtml(item.type || '')}</span> <span style="color:var(--accent);font-weight:500">${escapeHtml(item.client || 'UNKNOWN')}</span> <span style="color:var(--muted)">—</span> <span style="color:var(--text-secondary)">${escapeHtml((item.activityDescription || item.subject || '').substring(0, 60))}</span>`;
-                aiFeedItems.appendChild(row);
-                aiFeedItems.scrollTop = aiFeedItems.scrollHeight;
-              });
+            // Incrementally add items to store and refresh dashboard
+            if (data.items?.length) {
+              store.billingItems.push(...data.items);
+              refreshDashboard(container);
             }
           }
 
           if (data.type === 'complete') {
+            // Final sync — use server's authoritative list
             store.billingItems = data.items;
             refreshDashboard(container);
             toast(`${data.count} entries loaded`);
