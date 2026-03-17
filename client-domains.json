@@ -1,0 +1,5 @@
+{
+  "_comment": "Map email domains to client names. Emails from these domains will auto-assign the client. Add entries as needed.",
+  "acmecorp.com": "Acme Corporation",
+  "example-pharma.com": "Example Pharma Inc."
+}

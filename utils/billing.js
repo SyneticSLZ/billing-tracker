@@ -2,8 +2,31 @@ const OpenAI = require('openai');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
+const fs = require('fs');
+const path = require('path');
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// Load domain-to-client mapping (hot-reloads on each call so edits take effect without restart)
+function getClientDomainMap() {
+  try {
+    const filePath = path.join(__dirname, '..', 'client-domains.json');
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const map = JSON.parse(raw);
+    delete map._comment;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+function matchClientByDomain(emailAddress) {
+  if (!emailAddress) return '';
+  const domain = emailAddress.split('@')[1]?.toLowerCase();
+  if (!domain) return '';
+  const map = getClientDomainMap();
+  return map[domain] || '';
+}
 
 let openaiClient = null;
 function getOpenAI() {
@@ -106,7 +129,7 @@ function emailsToBillingItems(emails) {
     startTime: email.receivedDateTime,
     endTime: dayjs(email.receivedDateTime).add(6, 'minute').toISOString(),
     folderName: email.folderName || '',
-    rawClient: email.folderName || '',
+    rawClient: matchClientByDomain(email.from?.emailAddress?.address) || email.folderName || '',
     rawDescription: ''
   }));
 }
