@@ -9,27 +9,79 @@ async function graphGet(token, endpoint, params = {}) {
   return response.data;
 }
 
-async function getEmails(token, startDate, endDate, limit = 250) {
-  const allEmails = [];
-  let nextLink = null;
-  const filter = `receivedDateTime ge ${startDate}T00:00:00Z and receivedDateTime le ${endDate}T23:59:59Z`;
+async function getMailFolders(token) {
+  const topLevel = await graphGet(token, '/me/mailFolders', { $top: 50 });
+  const subfolders = [];
 
-  const initialData = await graphGet(token, '/me/messages', {
-    $filter: filter,
-    $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,conversationId,importance,hasAttachments',
-    $top: 100,
-    $orderby: 'receivedDateTime desc'
-  });
+  for (const folder of (topLevel.value || [])) {
+    // Skip the Inbox — we only want subfolders of other folders
+    if (folder.displayName === 'Inbox') continue;
 
-  allEmails.push(...(initialData.value || []));
-  nextLink = initialData['@odata.nextLink'] || null;
-
-  while (nextLink && allEmails.length < limit) {
-    const data = await graphGet(token, nextLink);
-    allEmails.push(...(data.value || []));
-    nextLink = data['@odata.nextLink'] || null;
+    try {
+      const children = await graphGet(token, `/me/mailFolders/${folder.id}/childFolders`, { $top: 50 });
+      for (const child of (children.value || [])) {
+        subfolders.push({
+          id: child.id,
+          displayName: child.displayName,
+          parentDisplayName: folder.displayName
+        });
+      }
+    } catch (err) {
+      // Skip folders we can't access
+    }
   }
 
+  console.log(`  📁 Found ${subfolders.length} subfolders (Inbox skipped)`);
+  return subfolders;
+}
+
+async function getEmails(token, startDate, endDate, limit = 250) {
+  const folders = await getMailFolders(token);
+
+  if (folders.length === 0) {
+    console.log('  ⚠️ No subfolders found — no emails will be fetched');
+    return [];
+  }
+
+  const allEmails = [];
+  const filter = `receivedDateTime ge ${startDate}T00:00:00Z and receivedDateTime le ${endDate}T23:59:59Z`;
+  const select = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,conversationId,importance,hasAttachments';
+
+  for (const folder of folders) {
+    try {
+      let nextLink = null;
+      const initialData = await graphGet(token, `/me/mailFolders/${folder.id}/messages`, {
+        $filter: filter,
+        $select: select,
+        $top: 100,
+        $orderby: 'receivedDateTime desc'
+      });
+
+      const folderEmails = (initialData.value || []).map(email => ({
+        ...email,
+        folderName: folder.displayName
+      }));
+      allEmails.push(...folderEmails);
+      nextLink = initialData['@odata.nextLink'] || null;
+
+      while (nextLink && allEmails.length < limit) {
+        const data = await graphGet(token, nextLink);
+        const moreEmails = (data.value || []).map(email => ({
+          ...email,
+          folderName: folder.displayName
+        }));
+        allEmails.push(...moreEmails);
+        nextLink = data['@odata.nextLink'] || null;
+      }
+
+      if (allEmails.length >= limit) break;
+    } catch (err) {
+      console.warn(`  ⚠️ Could not fetch emails from folder "${folder.displayName}":`, err.message);
+    }
+  }
+
+  // Sort all emails by date descending and cap at limit
+  allEmails.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
   return allEmails.slice(0, limit);
 }
 
@@ -112,4 +164,4 @@ async function getEmailBody(token, emailId) {
   }
 }
 
-module.exports = { getEmails, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody };
+module.exports = { getEmails, getMailFolders, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody };

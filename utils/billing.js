@@ -1,5 +1,9 @@
 const OpenAI = require('openai');
 const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 let openaiClient = null;
 function getOpenAI() {
@@ -16,8 +20,8 @@ function getDurationMinutes(start, end) {
 }
 
 function formatEntry(entry) {
-  const start = dayjs(entry.startTime);
-  const end = dayjs(entry.endTime);
+  const start = dayjs(entry.startTime).tz('America/New_York');
+  const end = dayjs(entry.endTime).tz('America/New_York');
   const durationMins = getDurationMinutes(entry.startTime, entry.endTime);
   return {
     ...entry,
@@ -35,7 +39,7 @@ async function extractBillingInfo(items, onProgress = null) {
     const result = items.map(item => ({
       ...item,
       client: item.rawClient || 'UNKNOWN - Please fill in',
-      activityDescription: item.rawDescription || item.subject || 'Review and fill in'
+      activityDescription: item.rawDescription || `Email correspondence re: ${item.subject || 'Review and fill in'}`
     }));
     if (onProgress) onProgress(items.length, items.length, result);
     return result;
@@ -54,7 +58,7 @@ For each item identify:
 2. ACTIVITY DESCRIPTION: Concise billing description e.g. "Email correspondence re: regulatory strategy", "Teams message re: FDA submission", "Phone conference re: clinical trial protocol"
 
 Items:
-${batch.map((item, idx) => `[${idx}] Type: ${item.type} | Subject: ${item.subject || 'N/A'} | From/With: ${item.participants || 'N/A'} | Preview: ${(item.bodyPreview || '').substring(0, 200)}`).join('\n')}
+${batch.map((item, idx) => `[${idx}] Type: ${item.type} | Subject: ${item.subject || 'N/A'} | From/With: ${item.participants || 'N/A'} | Folder/Client: ${item.rawClient || 'N/A'}`).join('\n')}
 
 Respond ONLY with a JSON array: [{"index": N, "client": "...", "activityDescription": "..."}]`;
 
@@ -101,7 +105,8 @@ function emailsToBillingItems(emails) {
     hasAttachments: email.hasAttachments,
     startTime: email.receivedDateTime,
     endTime: dayjs(email.receivedDateTime).add(6, 'minute').toISOString(),
-    rawClient: '',
+    folderName: email.folderName || '',
+    rawClient: email.folderName || '',
     rawDescription: ''
   }));
 }

@@ -40,9 +40,9 @@ router.post('/fetch', requireAuth, async (req, res) => {
     };
 
     // ── Phase 1: Fetch from sources ──
-    sendEvent({ type: 'progress', message: 'Fetching emails from Outlook...', percent: 10, phase: 'fetch', source: 'emails' });
+    sendEvent({ type: 'progress', message: 'Fetching emails from Outlook subfolders...', percent: 10, phase: 'fetch', source: 'emails' });
     const emails = await getEmails(token, startDate, endDate, emailLimit || 250);
-    sendEvent({ type: 'source-done', source: 'emails', count: emails.length, message: `Found ${emails.length} emails`, percent: 25 });
+    sendEvent({ type: 'source-done', source: 'emails', count: emails.length, message: `Found ${emails.length} emails from subfolders`, percent: 25 });
 
     sendEvent({ type: 'progress', message: 'Fetching calendar & Teams meetings...', percent: 30, phase: 'fetch', source: 'meetings' });
     const events = await getCalendarEvents(token, startDate, endDate);

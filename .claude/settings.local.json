@@ -5,7 +5,8 @@
       "Bash(git add:*)",
       "Bash(git remote:*)",
       "Bash(git branch:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(node -e \"require\\(''./utils/graph.js''\\); require\\(''./utils/billing.js''\\); require\\(''./routes/data.js''\\); console.log\\(''All modules loaded OK''\\)\")"
     ]
   }
 }
