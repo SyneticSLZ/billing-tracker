@@ -1,21 +1,37 @@
-# ⚖️ Billing Tracker — Rocket Matter Export
+# ⚖️ Billing Tracker — Subfolder Client Mapping + NextGen Export
 
-Automatically pulls Outlook emails, Teams meetings, and iPhone call logs,
-then exports a Rocket Matter-ready CSV with .1 hour billing increments.
+## 🆕 What's New (feature/subfolder-client-mapping)
+
+### 1. RM Key Upload
+Upload the **RM Key Excel file** (Client Name → Matter Key + Rate) before pulling data.
+The app matches your Inbox subfolder names to RM Key clients automatically.
+
+### 2. Subfolder-Based Client Mapping
+Instead of relying on AI to guess client names, the app:
+- Reads **Inbox subfolders** (each subfolder = a client)
+- Matches subfolder names to RM Key entries using fuzzy matching
+- Assigns **Matter-Key** and **Rate** automatically
+- AI is only used for **activity descriptions** (not client names)
+
+### 3. NextGen Financial Import XLSX Export
+Export billing entries as a `.xlsx` file matching the **NextGen Financial Data Import Template**:
+- **Time sheet** with all required columns
+- Matter-Key, Client Name, Rate auto-populated from RM Key
+- Date, Timekeeper-Name, Description, Billing-Type, Total-Billed-Hours filled in
+- Ready for direct import into NextGen/CosmoLex
 
 ---
 
-## 🚀 SETUP (5 minutes)
+## 🚀 SETUP
 
 ### Step 1 — Add your credentials to `.env`
 
-Open the `.env` file and fill in:
-
 ```
 CLIENT_ID=     ← From Azure App Registration
-TENANT_ID=     ← From Azure App Registration  
+TENANT_ID=     ← From Azure App Registration
 CLIENT_SECRET= ← From Azure App Registration (the Value, not the ID)
 OPENAI_API_KEY=← From https://platform.openai.com/api-keys
+SESSION_SECRET=← Any random string
 ```
 
 ### Step 2 — Install dependencies
@@ -40,48 +56,79 @@ http://localhost:3000
 
 ## 📋 How to Use
 
-1. **Sign in** with the Microsoft 365 / GoDaddy account
-2. **Select a date range** (or click "This Month")
-3. **Click "Pull Outlook + Teams"** — emails and meetings auto-load
-4. **Upload iPhone call log** (CSV from iMazing) if needed
-5. **Review entries** — click any row to edit client name or description
-6. **Export CSV** — click "Export Rocket Matter CSV" to download
+1. **Sign in** with Microsoft 365
+2. **Upload RM Key** — click "Upload RM Key Excel" on the dashboard
+   - This maps Client Name → Matter Key + Rate
+   - Green badges show matched Inbox subfolders
+3. **Select a date range** and click **Pull Data**
+   - Emails are fetched from Inbox subfolders
+   - Each subfolder name is matched to the RM Key
+   - AI generates billing descriptions only (client is already known)
+4. **Review entries** — click any row to edit
+5. **Export:**
+   - **Export NextGen XLSX** — generates the Financial Import template
+   - **Export CSV** — legacy Rocket Matter format
 
 ---
 
-## 📞 AT&T Call Log Export
+## 📊 NextGen XLSX Export Columns
 
-1. Log in to **myAT&T** at https://www.att.com/my/#/
-2. Go to **My Usage** → **View Bill** or **Usage Details**
-3. Select the billing period / date range
-4. Click **Export** or **Download** → choose **CSV**
-5. Upload that CSV in the app — it handles AT&T's format automatically
-
-The parser automatically skips data sessions and SMS rows, keeping only voice calls.
+| Column | Filled? | Source |
+|--------|---------|--------|
+| Time-Key | ○ | Blank |
+| Matter-Key | ● | RM Key lookup |
+| Client Name | ● | RM Key / subfolder |
+| Matter Name | ○ | Blank |
+| Date | ● | Email received date |
+| Timekeeper-Name | ● | Settings (default: Mark Paxton) |
+| Rate | ● | RM Key lookup |
+| ActivityCode | ○ | Blank |
+| TaskCode | ○ | Blank |
+| Task-Name | ○ | Blank |
+| Description | ● | AI-generated |
+| Notes | ○ | Blank |
+| Billing-Type | ● | "Billable" |
+| Billed-Hours | ○ | Blank |
+| Billed-Minutes | ○ | Blank |
+| Total-Billed-Hours | ● | Rounded to 0.1h |
+| Tax1 | ○ | Blank |
+| Tax2 | ○ | Blank |
+| Amount | ○ | Blank |
 
 ---
 
-## 📊 Rocket Matter CSV Columns
+## 🔑 RM Key File Format
 
-| Column | Description |
-|--------|-------------|
-| Client | AI-extracted or manually entered client name |
-| Date | MM/DD/YYYY |
-| Start Time | e.g. 9:00 AM |
-| End Time | e.g. 9:06 AM |
-| Duration (Hours) | Rounded UP to nearest 0.1 hour (6 min increments) |
-| Activity Description | AI-generated billing description |
-| Type | Email / Teams Meeting / Phone Call |
-| Source | Outlook / Teams / iPhone |
+The RM Key Excel file should have 3 columns:
+
+| Client Name | RM Matter Key | Rate |
+|-------------|---------------|------|
+| BHC Management, LLC | 14 | 450 |
+| Denovo Biopharma | 7 | 450 |
+| Entegrion | 1 | 150 |
 
 ---
 
-## ⚠️ Troubleshooting
+## 📁 How Subfolder Matching Works
 
-**"Not authenticated" error** → Make sure Azure redirect URI is exactly `http://localhost:3000/auth/callback`
+1. App reads all **child folders of your Inbox**
+2. Each subfolder name is matched against the RM Key using:
+   - Exact match first
+   - Then normalized match (strips punctuation, LLC/Inc, etc.)
+   - Then substring containment
+   - Then word overlap (2+ significant words)
+3. Matched entries get **Matter-Key** and **Rate** from the RM Key
+4. Unmatched entries are flagged as "UNKNOWN - No RM Key match"
 
-**No Teams meetings showing** → Make sure `OnlineMeetings.Read` permission was granted in Azure
+---
 
-**CallRecords not available** → This requires admin consent in Azure. Calendar events (Teams meetings) still work without it.
+## 🔧 API Endpoints (New)
 
-**GoDaddy account issues** → When logging into portal.azure.com, use your full Microsoft email (the one you use for Outlook/Teams)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/rmkey/upload` | POST | Upload RM Key Excel file |
+| `/api/rmkey` | GET | Get RM Key status and client list |
+| `/api/rmkey` | DELETE | Clear RM Key data |
+| `/api/subfolders` | GET | List Inbox subfolders with match status |
+| `/export/xlsx` | GET | Download NextGen Financial Import XLSX |
+| `/export/settings/timekeeper` | POST | Set default timekeeper name |

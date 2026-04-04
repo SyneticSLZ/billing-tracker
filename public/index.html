@@ -15,10 +15,10 @@
 </head>
 <body>
 
-<!-- ─── LOGIN SCREEN ─── -->
+<!-- LOGIN SCREEN -->
 <div id="login-screen" style="display:none">
   <div class="login-card">
-    <div style="font-size:3rem;margin-bottom:1rem">&#9878;&#65039;</div>
+    <div style="font-size:3rem;margin-bottom:1rem">⚖️</div>
     <h2>Billing Tracker</h2>
     <p>Connect your Microsoft 365 account to pull emails, meetings, Teams messages, and generate billing-ready entries.</p>
     <div class="source-badges">
@@ -28,19 +28,17 @@
       <span class="badge badge-meeting-type">Meetings</span>
     </div>
     <button class="ms-btn" onclick="appLogin()">
-      <span>&#11035;</span> Sign in with Microsoft 365
+      <span>⬛</span> Sign in with Microsoft 365
     </button>
     <p style="font-size:0.7rem;color:var(--muted);margin-top:1rem;margin-bottom:0">GoDaddy-hosted Microsoft accounts supported</p>
   </div>
 </div>
 
-<!-- ─── APP CONTAINER ─── -->
+<!-- APP CONTAINER -->
 <div id="app-container" style="display:none">
-
-  <!-- Header -->
   <header class="app-header">
     <div class="logo">
-      <div class="logo-icon">&#9878;&#65039;</div>
+      <div class="logo-icon">⚖️</div>
       <div>
         <h1>Billing Tracker</h1>
         <span>Oversight Dashboard</span>
@@ -55,20 +53,15 @@
     </div>
   </header>
 
-  <!-- Layout -->
   <div class="app-layout">
-    <!-- Sidebar -->
     <aside class="sidebar">
       <nav class="sidebar-nav" id="sidebar-nav"></nav>
     </aside>
-
-    <!-- Content -->
     <div class="content-area" id="view-container"></div>
   </div>
-
 </div>
 
-<!-- ─── EDIT MODAL ─── -->
+<!-- EDIT MODAL -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
     <h3>Edit Billing Entry</h3>

@@ -4,7 +4,7 @@ export async function checkAuthStatus() {
   return res.json();
 }
 
-export async function fetchBillingData(startDate, endDate, settings = {}) {
+export async function fetchBillingData(startDate, endDate, settings = {}, selectedFolders = null) {
   const response = await fetch('/api/fetch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -14,6 +14,7 @@ export async function fetchBillingData(startDate, endDate, settings = {}) {
       emailLimit: settings.emailFetchLimit || 250,
       chatLimit: settings.chatLimit || 50,
       messagesPerChat: settings.messagesPerChat || 50,
+      selectedFolders,
     })
   });
   return response;
@@ -49,6 +50,45 @@ export async function uploadCallLog(file) {
   const res = await fetch('/api/upload-calls', { method: 'POST', body: formData });
   return res.json();
 }
+
+// ─── RM KEY ENDPOINTS ───
+
+export async function uploadRMKey(file) {
+  const formData = new FormData();
+  formData.append('rmkey', file);
+  const res = await fetch('/api/rmkey/upload', { method: 'POST', body: formData });
+  return res.json();
+}
+
+export async function getRMKeyStatus() {
+  const res = await fetch('/api/rmkey');
+  return res.json();
+}
+
+export async function clearRMKey() {
+  const res = await fetch('/api/rmkey', { method: 'DELETE' });
+  return res.json();
+}
+
+// ─── SUBFOLDER ENDPOINTS ───
+
+export async function getSubfolders() {
+  const res = await fetch('/api/subfolders');
+  return res.json();
+}
+
+// ─── EXPORT ───
+
+export async function setTimekeeperName(name) {
+  const res = await fetch('/export/settings/timekeeper', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timekeeperName: name })
+  });
+  return res.json();
+}
+
+// ─── RAW DATA ───
 
 export async function getRawEmails(page = 1, pageSize = 50) {
   const res = await fetch(`/api/raw/emails?page=${page}&pageSize=${pageSize}`);

@@ -1,13 +1,8 @@
 // Central state store
 export const store = {
-  // Auth
   account: null,
   authenticated: false,
-
-  // Billing items (processed)
   billingItems: [],
-
-  // Raw source data (for drill-downs)
   rawData: {
     emails: [],
     events: [],
@@ -15,23 +10,17 @@ export const store = {
     callRecords: [],
     uploadedCalls: []
   },
-
+  // RM Key state
+  rmKeyLoaded: false,
+  rmKeyClients: [],
   // UI state
   currentView: 'dashboard',
   drilldownOpen: false,
   drilldownItem: null,
   drilldownType: null,
-
-  // Filters
-  filters: {
-    type: '',
-    client: '',
-    search: '',
-  },
+  filters: { type: '', client: '', search: '' },
   sort: { column: 'date', direction: 'desc' },
   pagination: { page: 1, pageSize: 50 },
-
-  // Settings (loaded from localStorage)
   settings: {
     pageSize: 50,
     defaultDateRange: 'month',
@@ -41,6 +30,7 @@ export const store = {
     showCharts: true,
     groupEmailsByThread: false,
     hourlyRate: 0,
+    timekeeperName: 'Mark Paxton',
   }
 };
 
@@ -60,34 +50,22 @@ export function saveSettings() {
   } catch (e) { /* ignore */ }
 }
 
-// Get unique clients from billing items
 export function getUniqueClients() {
   const clients = new Set();
-  store.billingItems.forEach(item => {
-    if (item.client) clients.add(item.client);
-  });
+  store.billingItems.forEach(item => { if (item.client) clients.add(item.client); });
   return [...clients].sort();
 }
 
-// Get unique types
 export function getUniqueTypes() {
   const types = new Set();
-  store.billingItems.forEach(item => {
-    if (item.type) types.add(item.type);
-  });
+  store.billingItems.forEach(item => { if (item.type) types.add(item.type); });
   return [...types].sort();
 }
 
-// Filter and sort items
 export function getFilteredItems(items = null) {
   let filtered = items || store.billingItems;
-
-  if (store.filters.type) {
-    filtered = filtered.filter(i => i.type === store.filters.type);
-  }
-  if (store.filters.client) {
-    filtered = filtered.filter(i => i.client === store.filters.client);
-  }
+  if (store.filters.type) filtered = filtered.filter(i => i.type === store.filters.type);
+  if (store.filters.client) filtered = filtered.filter(i => i.client === store.filters.client);
   if (store.filters.search) {
     const q = store.filters.search.toLowerCase();
     filtered = filtered.filter(i =>
@@ -97,39 +75,27 @@ export function getFilteredItems(items = null) {
       (i.participants || '').toLowerCase().includes(q)
     );
   }
-
-  // Sort
   const { column, direction } = store.sort;
   filtered.sort((a, b) => {
     let valA = a[column] || '';
     let valB = b[column] || '';
-    if (column === 'durationHours') {
-      valA = parseFloat(valA) || 0;
-      valB = parseFloat(valB) || 0;
-    } else if (column === 'date' || column === 'startTime') {
-      valA = new Date(valA).getTime() || 0;
-      valB = new Date(valB).getTime() || 0;
-    } else {
-      valA = String(valA).toLowerCase();
-      valB = String(valB).toLowerCase();
-    }
+    if (column === 'durationHours') { valA = parseFloat(valA) || 0; valB = parseFloat(valB) || 0; }
+    else if (column === 'date' || column === 'startTime') { valA = new Date(valA).getTime() || 0; valB = new Date(valB).getTime() || 0; }
+    else { valA = String(valA).toLowerCase(); valB = String(valB).toLowerCase(); }
     if (valA < valB) return direction === 'asc' ? -1 : 1;
     if (valA > valB) return direction === 'asc' ? 1 : -1;
     return 0;
   });
-
   return filtered;
 }
 
-// Get paginated slice
 export function getPaginatedItems(filtered) {
   const { page, pageSize } = store.pagination;
   const start = (page - 1) * pageSize;
   return {
     items: filtered.slice(start, start + pageSize),
     total: filtered.length,
-    page,
-    pageSize,
+    page, pageSize,
     totalPages: Math.ceil(filtered.length / pageSize)
   };
 }

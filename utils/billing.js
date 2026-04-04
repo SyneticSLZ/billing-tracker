@@ -4,10 +4,11 @@ const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 const fs = require('fs');
 const path = require('path');
+const { matchSubfolderToClient } = require('./rmkey');
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// Load domain-to-client mapping (hot-reloads on each call so edits take effect without restart)
+// Load domain-to-client mapping (legacy, kept for backward compat)
 function getClientDomainMap() {
   try {
     const filePath = path.join(__dirname, '..', 'client-domains.json');
@@ -56,12 +57,52 @@ function formatEntry(entry) {
   };
 }
 
-async function extractBillingInfo(items, onProgress = null) {
+/**
+ * Apply RM Key client mapping to billing items.
+ * Uses the subfolder name (item.folderName / rawClient) to look up
+ * Matter-Key and Rate from the RM Key data.
+ * Items that don't match get flagged as UNKNOWN.
+ */
+function applyRMKeyMapping(items, rmKeyData) {
+  if (!rmKeyData) return items;
+
+  return items.map(item => {
+    // The subfolder name is stored in rawClient (set during emailsToBillingItems)
+    const subfolderName = item.folderName || item.rawClient || '';
+    const match = matchSubfolderToClient(subfolderName, rmKeyData);
+
+    if (match) {
+      return {
+        ...item,
+        client: match.clientName,
+        matterKey: match.matterKey,
+        rate: match.rate,
+        rmKeyMatched: true,
+      };
+    }
+
+    // No match — keep original rawClient or mark unknown
+    return {
+      ...item,
+      client: subfolderName || item.rawClient || 'UNKNOWN - No RM Key match',
+      matterKey: null,
+      rate: null,
+      rmKeyMatched: false,
+    };
+  });
+}
+
+/**
+ * Extract billing descriptions using AI.
+ * When rmKeyData is provided, AI only generates descriptions (client is already known).
+ * When rmKeyData is null, AI also extracts client names (legacy behavior).
+ */
+async function extractBillingInfo(items, onProgress = null, rmKeyData = null) {
   if (!items.length) return [];
   if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'PASTE_YOUR_OPENAI_KEY_HERE') {
     const result = items.map(item => ({
       ...item,
-      client: item.rawClient || 'UNKNOWN - Please fill in',
+      client: item.client || item.rawClient || 'UNKNOWN - Please fill in',
       activityDescription: item.rawDescription || `Email correspondence re: ${item.subject || 'Review and fill in'}`
     }));
     if (onProgress) onProgress(items.length, items.length, result);
@@ -71,19 +112,40 @@ async function extractBillingInfo(items, onProgress = null) {
   const openai = getOpenAI();
   const results = [];
   const batchSize = 10;
+  const clientAlreadyMapped = !!rmKeyData;
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
-    const prompt = `You are a legal billing assistant. Extract billing information from these communications.
+
+    let prompt;
+    if (clientAlreadyMapped) {
+      // Client is already known from subfolder → RM Key mapping.
+      // AI only needs to generate the billing description.
+      prompt = `You are a legal billing assistant. Generate concise billing activity descriptions for these communications.
+
+For each item, create a professional billing description like:
+- "Email correspondence re: regulatory strategy"
+- "Teams message re: FDA submission timeline"
+- "Phone conference re: clinical trial protocol"
+- "Meeting re: quarterly review and compliance updates"
+
+Items:
+${batch.map((item, idx) => `[${idx}] Type: ${item.type} | Client: ${item.client} | Subject: ${item.subject || 'N/A'} | From/With: ${item.participants || 'N/A'}`).join('\n')}
+
+Respond ONLY with a JSON array: [{"index": N, "activityDescription": "..."}]`;
+    } else {
+      // Legacy mode: AI extracts both client and description
+      prompt = `You are a legal billing assistant. Extract billing information from these communications.
 
 For each item identify:
 1. CLIENT NAME: The client/company being served. If unclear use "UNKNOWN".
-2. ACTIVITY DESCRIPTION: Concise billing description e.g. "Email correspondence re: regulatory strategy", "Teams message re: FDA submission", "Phone conference re: clinical trial protocol"
+2. ACTIVITY DESCRIPTION: Concise billing description e.g. "Email correspondence re: regulatory strategy"
 
 Items:
 ${batch.map((item, idx) => `[${idx}] Type: ${item.type} | Subject: ${item.subject || 'N/A'} | From/With: ${item.participants || 'N/A'} | Folder/Client: ${item.rawClient || 'N/A'}`).join('\n')}
 
 Respond ONLY with a JSON array: [{"index": N, "client": "...", "activityDescription": "..."}]`;
+    }
 
     try {
       const response = await openai.chat.completions.create({
@@ -95,8 +157,12 @@ Respond ONLY with a JSON array: [{"index": N, "client": "...", "activityDescript
       const parsed = JSON.parse(text);
       parsed.forEach(({ index, client, activityDescription }) => {
         if (batch[index]) {
-          batch[index].client = client;
-          batch[index].activityDescription = activityDescription;
+          if (!clientAlreadyMapped && client) {
+            batch[index].client = client;
+          }
+          if (activityDescription) {
+            batch[index].activityDescription = activityDescription;
+          }
         }
       });
     } catch (err) {
@@ -222,6 +288,7 @@ function callLogsToBillingItems(rows) {
 
 module.exports = {
   extractBillingInfo,
+  applyRMKeyMapping,
   emailsToBillingItems,
   eventsToBillingItems,
   teamsMessagesToBillingItems,

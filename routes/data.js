@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
-const { getEmails, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody } = require('../utils/graph');
+const { getEmails, getEmailsFromSubfolders, getInboxSubfolders, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody } = require('../utils/graph');
+const { parseRMKey, matchSubfolderToClient } = require('../utils/rmkey');
 const {
   extractBillingInfo,
+  applyRMKeyMapping,
   emailsToBillingItems,
   eventsToBillingItems,
   teamsMessagesToBillingItems,
@@ -21,8 +23,102 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// ─── RM KEY MANAGEMENT ───
+
+/**
+ * Upload and parse RM Key Excel file.
+ * Stores parsed data in session for use during fetch & export.
+ */
+router.post('/rmkey/upload', requireAuth, upload.single('rmkey'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const rmKeyData = await parseRMKey(req.file.buffer);
+    req.session.rmKeyData = rmKeyData;
+    req.session.rmKeyFileName = req.file.originalname;
+    res.json({
+      success: true,
+      clientCount: rmKeyData.clients.length,
+      clients: rmKeyData.clients.map(c => ({
+        clientName: c.clientName,
+        matterKey: c.matterKey,
+        rate: c.rate
+      }))
+    });
+  } catch (err) {
+    console.error('RM Key parse error:', err);
+    res.status(500).json({ error: 'Failed to parse RM Key file: ' + err.message });
+  }
+});
+
+/**
+ * Get current RM Key status and data.
+ */
+router.get('/rmkey', requireAuth, (req, res) => {
+  const rmKeyData = req.session.rmKeyData;
+  if (!rmKeyData) {
+    return res.json({ loaded: false });
+  }
+  res.json({
+    loaded: true,
+    fileName: req.session.rmKeyFileName || 'Unknown',
+    clientCount: rmKeyData.clients.length,
+    clients: rmKeyData.clients.map(c => ({
+      clientName: c.clientName,
+      matterKey: c.matterKey,
+      rate: c.rate
+    }))
+  });
+});
+
+/**
+ * Clear RM Key data from session.
+ */
+router.delete('/rmkey', requireAuth, (req, res) => {
+  req.session.rmKeyData = null;
+  req.session.rmKeyFileName = null;
+  res.json({ success: true });
+});
+
+// ─── INBOX SUBFOLDERS ───
+
+/**
+ * List all Inbox subfolders (client folders) and show RM Key match status.
+ */
+router.get('/subfolders', requireAuth, async (req, res) => {
+  try {
+    const token = req.session.accessToken;
+    const subfolders = await getInboxSubfolders(token);
+    const rmKeyData = req.session.rmKeyData;
+
+    const result = subfolders.map(f => {
+      const match = rmKeyData ? matchSubfolderToClient(f.displayName, rmKeyData) : null;
+      return {
+        id: f.id,
+        displayName: f.displayName,
+        totalItemCount: f.totalItemCount,
+        matched: !!match,
+        matchedClient: match?.clientName || null,
+        matterKey: match?.matterKey || null,
+        rate: match?.rate || null,
+      };
+    });
+
+    res.json({
+      subfolders: result,
+      total: result.length,
+      matched: result.filter(r => r.matched).length,
+      unmatched: result.filter(r => !r.matched).length,
+    });
+  } catch (err) {
+    console.error('Subfolder fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch subfolders: ' + err.message });
+  }
+});
+
+// ─── MAIN FETCH (MODIFIED FOR SUBFOLDER FLOW) ───
+
 router.post('/fetch', requireAuth, async (req, res) => {
-  const { startDate, endDate, emailLimit, chatLimit, messagesPerChat } = req.body;
+  const { startDate, endDate, emailLimit, chatLimit, messagesPerChat, selectedFolders } = req.body;
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
   }
@@ -33,16 +129,29 @@ router.post('/fetch', requireAuth, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const token = req.session.accessToken;
+    const rmKeyData = req.session.rmKeyData || null;
 
-    // Helper to send SSE events
     const sendEvent = (eventData) => {
       res.write(`data: ${JSON.stringify(eventData)}\n\n`);
     };
 
     // ── Phase 1: Fetch from sources ──
-    sendEvent({ type: 'progress', message: 'Fetching emails from Outlook subfolders...', percent: 10, phase: 'fetch', source: 'emails' });
-    const emails = await getEmails(token, startDate, endDate, emailLimit || 250);
-    sendEvent({ type: 'source-done', source: 'emails', count: emails.length, message: `Found ${emails.length} emails from subfolders`, percent: 25 });
+    sendEvent({ type: 'progress', message: 'Fetching emails from Inbox subfolders...', percent: 10, phase: 'fetch', source: 'emails' });
+
+    // Use new subfolder-based fetch
+    const { emails, subfolders } = await getEmailsFromSubfolders(
+      token, startDate, endDate,
+      emailLimit || 250,
+      selectedFolders || null  // null = all subfolders
+    );
+    sendEvent({
+      type: 'source-done',
+      source: 'emails',
+      count: emails.length,
+      message: `Found ${emails.length} emails from ${subfolders.length} subfolders`,
+      percent: 25,
+      subfolderCount: subfolders.length
+    });
 
     sendEvent({ type: 'progress', message: 'Fetching calendar & Teams meetings...', percent: 30, phase: 'fetch', source: 'meetings' });
     const events = await getCalendarEvents(token, startDate, endDate);
@@ -63,12 +172,26 @@ router.post('/fetch', requireAuth, async (req, res) => {
       ...teamsMessagesToBillingItems(teamsMessages),
     ];
 
-    const totalItems = allItems.length;
-    sendEvent({ type: 'progress', message: `Processing ${totalItems} items with AI...`, percent: 65, phase: 'ai', totalItems });
+    // ── Phase 2.5: Apply RM Key mapping (subfolder name → client) ──
+    if (rmKeyData) {
+      sendEvent({ type: 'progress', message: 'Mapping subfolders to RM Key clients...', percent: 63, phase: 'mapping' });
+      allItems = applyRMKeyMapping(allItems, rmKeyData);
+      const matched = allItems.filter(i => i.rmKeyMatched).length;
+      const unmatched = allItems.filter(i => !i.rmKeyMatched).length;
+      sendEvent({
+        type: 'progress',
+        message: `RM Key: ${matched} matched, ${unmatched} unmatched`,
+        percent: 64,
+        phase: 'mapping'
+      });
+    }
 
-    // ── Phase 3: AI extraction with per-batch streaming ──
+    const totalItems = allItems.length;
+    sendEvent({ type: 'progress', message: `Processing ${totalItems} items with AI (descriptions only)...`, percent: 65, phase: 'ai', totalItems });
+
+    // ── Phase 3: AI extraction (descriptions only when RM Key is loaded) ──
     allItems = await extractBillingInfo(allItems, (processed, total, batchItems) => {
-      const aiPct = 65 + Math.round((processed / total) * 30); // 65% to 95%
+      const aiPct = 65 + Math.round((processed / total) * 30);
       const formattedBatch = batchItems.map(formatEntry);
       sendEvent({
         type: 'ai-batch',
@@ -78,21 +201,21 @@ router.post('/fetch', requireAuth, async (req, res) => {
         message: `AI processing: ${processed}/${total} items`,
         items: formattedBatch
       });
-    });
+    }, rmKeyData);
 
     allItems = allItems.map(formatEntry);
 
-    // Store raw data for drill-downs
-    req.session.rawData = {
-      emails,
-      events,
-      teamsMessages,
-      callRecords
-    };
+    // Store data for drill-downs and export
+    req.session.rawData = { emails, events, teamsMessages, callRecords };
     req.session.billingItems = allItems;
 
     sendEvent({ type: 'progress', message: 'Done!', percent: 100, phase: 'done' });
-    sendEvent({ type: 'complete', items: allItems, count: allItems.length });
+    sendEvent({
+      type: 'complete',
+      items: allItems,
+      count: allItems.length,
+      rmKeyLoaded: !!rmKeyData,
+    });
     res.end();
 
   } catch (err) {
@@ -102,18 +225,25 @@ router.post('/fetch', requireAuth, async (req, res) => {
   }
 });
 
+// ─── CALL LOG UPLOAD ───
+
 router.post('/upload-calls', requireAuth, upload.single('calllog'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
     const csvText = req.file.buffer.toString('utf-8');
     const rows = parse(csvText, { columns: true, skip_empty_lines: true, trim: true });
     let items = callLogsToBillingItems(rows);
-    items = await extractBillingInfo(items);
+
+    const rmKeyData = req.session.rmKeyData || null;
+    if (rmKeyData) {
+      items = applyRMKeyMapping(items, rmKeyData);
+    }
+
+    items = await extractBillingInfo(items, null, rmKeyData);
     items = items.map(formatEntry);
     const existing = req.session.billingItems || [];
     req.session.billingItems = [...existing, ...items];
 
-    // Store raw call data
     if (!req.session.rawData) req.session.rawData = {};
     req.session.rawData.uploadedCalls = rows;
 
@@ -123,6 +253,8 @@ router.post('/upload-calls', requireAuth, upload.single('calllog'), async (req, 
     res.status(500).json({ error: 'Failed to parse call log: ' + err.message });
   }
 });
+
+// ─── CRUD ENDPOINTS ───
 
 router.put('/entry/:id', requireAuth, (req, res) => {
   const { id } = req.params;
@@ -184,17 +316,11 @@ router.get('/raw/events', requireAuth, (req, res) => {
 
 router.get('/raw/teams', requireAuth, (req, res) => {
   const messages = req.session.rawData?.teamsMessages || [];
-  // Group by chatId
   const grouped = {};
   messages.forEach(msg => {
     const chatId = msg.chatId || 'unknown';
     if (!grouped[chatId]) {
-      grouped[chatId] = {
-        chatId,
-        topic: msg.chatTopic || 'Teams Chat',
-        chatType: msg.chatType,
-        messages: []
-      };
+      grouped[chatId] = { chatId, topic: msg.chatTopic || 'Teams Chat', chatType: msg.chatType, messages: [] };
     }
     grouped[chatId].messages.push(msg);
   });
@@ -216,14 +342,11 @@ router.get('/clients', requireAuth, (req, res) => {
     if (!clientMap[client]) {
       clientMap[client] = {
         client,
+        matterKey: item.matterKey || null,
+        rate: item.rate || null,
         totalEntries: 0,
         totalHours: 0,
-        breakdown: {
-          email: { count: 0, hours: 0 },
-          teams: { count: 0, hours: 0 },
-          meeting: { count: 0, hours: 0 },
-          call: { count: 0, hours: 0 }
-        }
+        breakdown: { email: { count: 0, hours: 0 }, teams: { count: 0, hours: 0 }, meeting: { count: 0, hours: 0 }, call: { count: 0, hours: 0 } }
       };
     }
 
@@ -232,19 +355,10 @@ router.get('/clients', requireAuth, (req, res) => {
     c.totalHours += item.durationHours || 0.1;
 
     const type = (item.type || '').toLowerCase();
-    if (type.includes('email')) {
-      c.breakdown.email.count++;
-      c.breakdown.email.hours += item.durationHours || 0.1;
-    } else if (type.includes('teams message')) {
-      c.breakdown.teams.count++;
-      c.breakdown.teams.hours += item.durationHours || 0.1;
-    } else if (type.includes('meeting')) {
-      c.breakdown.meeting.count++;
-      c.breakdown.meeting.hours += item.durationHours || 0.1;
-    } else if (type.includes('call')) {
-      c.breakdown.call.count++;
-      c.breakdown.call.hours += item.durationHours || 0.1;
-    }
+    if (type.includes('email')) { c.breakdown.email.count++; c.breakdown.email.hours += item.durationHours || 0.1; }
+    else if (type.includes('teams message')) { c.breakdown.teams.count++; c.breakdown.teams.hours += item.durationHours || 0.1; }
+    else if (type.includes('meeting')) { c.breakdown.meeting.count++; c.breakdown.meeting.hours += item.durationHours || 0.1; }
+    else if (type.includes('call')) { c.breakdown.call.count++; c.breakdown.call.hours += item.durationHours || 0.1; }
   });
 
   const clients = Object.values(clientMap)

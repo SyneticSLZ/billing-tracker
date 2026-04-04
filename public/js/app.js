@@ -13,13 +13,10 @@ import { toast, debounce } from './utils.js';
 
 async function init() {
   loadSettings();
-
-  // Handle URL error params
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('error')) {
     setTimeout(() => toast('Error: ' + urlParams.get('error'), true), 500);
   }
-
   try {
     const authData = await checkAuthStatus();
     if (authData.authenticated) {
@@ -42,14 +39,11 @@ function showLogin() {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-container').style.display = 'block';
-
   if (store.account) {
     document.getElementById('user-name').textContent = store.account.name || store.account.email || '';
     document.getElementById('logout-btn').style.display = 'inline-flex';
   }
-
   renderNav(document.getElementById('sidebar-nav'));
-
   registerRoute('dashboard', renderDashboard);
   registerRoute('emails', renderEmails);
   registerRoute('teams', renderTeams);
@@ -57,15 +51,11 @@ function showApp() {
   registerRoute('calls', renderCalls);
   registerRoute('clients', renderClients);
   registerRoute('settings', renderSettings);
-
   initRouter();
-
-  // Global search: focuses the table search in the current view
   const globalSearch = document.getElementById('global-search');
   if (globalSearch) {
     globalSearch.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && globalSearch.value.trim()) {
-        // Focus the in-view search if one exists
         const viewSearch = document.querySelector('#view-container .table-search');
         if (viewSearch) {
           viewSearch.value = globalSearch.value;
