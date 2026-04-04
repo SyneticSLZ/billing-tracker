@@ -160,16 +160,13 @@ router.get('/xlsx', requireAuth, async (req, res) => {
 
     // Add data rows — only items with an RM Key match get Matter-Key and Rate
     items.forEach(item => {
-      // Parse date for Excel date format — use startTime ISO for precision, fall back to parsed date string
-      let excelDate = null;
+      // Format date as plain MM/DD/YYYY string to avoid Excel timezone issues
+      let dateStr = '';
       if (item.startTime) {
-        const estDate = dayjs(item.startTime).tz('America/New_York');
-        excelDate = new Date(estDate.year(), estDate.month(), estDate.date());
+        dateStr = dayjs(item.startTime).tz('America/New_York').format('MM/DD/YYYY');
       } else if (item.date) {
-        const parts = item.date.split('/');
-        if (parts.length === 3) {
-          excelDate = new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
-        }
+        // item.date is already MM/DD/YYYY from billing.js
+        dateStr = item.date;
       }
 
       const row = timeSheet.addRow([
@@ -177,7 +174,7 @@ router.get('/xlsx', requireAuth, async (req, res) => {
         item.matterKey || null,                         // B: Matter-Key
         item.client || '',                              // C: Client Name
         null,                                           // D: Matter Name (blank)
-        excelDate || item.date || '',                   // E: Date
+        dateStr,                                        // E: Date (MM/DD/YYYY string)
         timekeeperName,                                 // F: Timekeeper-Name
         item.rate || null,                              // G: Rate
         null,                                           // H: ActivityCode
@@ -193,12 +190,6 @@ router.get('/xlsx', requireAuth, async (req, res) => {
         null,                                           // R: Tax2
         null,                                           // S: Amount
       ]);
-
-      // Format date column as MM/DD/YYYY
-      const dateCell = row.getCell(5);
-      if (excelDate) {
-        dateCell.numFmt = 'MM/DD/YYYY';
-      }
 
       // Style data rows
       row.eachCell((cell) => {
