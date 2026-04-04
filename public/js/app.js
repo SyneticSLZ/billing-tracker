@@ -9,6 +9,7 @@ import { renderMeetings } from './components/meetingsView.js';
 import { renderCalls } from './components/callsView.js';
 import { renderClients } from './components/clientBreakdown.js';
 import { renderSettings } from './components/settingsPanel.js';
+import { renderCalendar } from './components/calendarView.js';
 import { toast, debounce } from './utils.js';
 
 async function init() {
@@ -49,6 +50,7 @@ function showApp() {
   registerRoute('teams', renderTeams);
   registerRoute('meetings', renderMeetings);
   registerRoute('calls', renderCalls);
+  registerRoute('calendar', renderCalendar);
   registerRoute('clients', renderClients);
   registerRoute('settings', renderSettings);
   initRouter();

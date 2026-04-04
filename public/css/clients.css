@@ -1,24 +1,25 @@
-.clients-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
-.client-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.1rem; cursor: pointer; transition: all var(--transition); }
-.client-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.clients-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.client-card { background: var(--surface); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; cursor: pointer; transition: all var(--transition); }
+.client-card:hover { border-color: var(--border-light); }
 .client-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.client-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; }
-.client-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.client-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+.client-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .client-name.unknown { color: var(--warning); }
-.client-hours { font-family: 'DM Mono', monospace; font-size: 0.85rem; color: var(--accent); font-weight: 600; flex-shrink: 0; margin-left: 8px; }
-.client-entries-count { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.75rem; }
-.client-source-bar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--surface2); margin-bottom: 0.5rem; }
+.client-hours { font-size: 13px; color: var(--accent); font-weight: 600; flex-shrink: 0; margin-left: 8px; font-variant-numeric: tabular-nums; }
+.client-entries-count { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.client-source-bar { display: flex; height: 3px; border-radius: 2px; overflow: hidden; background: var(--surface2); margin-bottom: 8px; }
 .source-segment { height: 100%; transition: width var(--transition); }
 .source-segment.email { background: var(--email-color); }
 .source-segment.teams { background: var(--teams-color); }
 .source-segment.meeting { background: var(--meeting-color); }
 .source-segment.call { background: var(--call-color); }
 .client-source-labels { display: flex; flex-wrap: wrap; gap: 8px; }
-.source-label { font-size: 0.65rem; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.source-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .source-label-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .client-detail { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.client-detail-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
-.client-detail-header h2 { font-size: 1rem; font-weight: 600; }
-.stacked-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; background: var(--surface2); margin: 1rem 1.25rem; }
-.stacked-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-family: 'DM Mono', monospace; color: #0d0f14; font-weight: 600; min-width: 0; transition: width var(--transition); }
+.client-detail-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.client-detail-header h2 { font-size: 14px; font-weight: 600; }
+.stacked-bar { display: flex; height: 20px; border-radius: 4px; overflow: hidden; background: var(--surface2); margin: 12px 16px; }
+.stacked-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--bg); font-weight: 600; min-width: 0; transition: width var(--transition); }
+
 @media (max-width: 600px) { .clients-grid { grid-template-columns: 1fr; } }

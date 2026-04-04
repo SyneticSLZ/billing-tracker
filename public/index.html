@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Billing Tracker — Oversight Dashboard</title>
+<meta name="color-scheme" content="dark">
+<title>Billing Tracker</title>
 <link rel="stylesheet" href="/css/variables.css">
 <link rel="stylesheet" href="/css/base.css">
 <link rel="stylesheet" href="/css/sidebar.css">
@@ -18,7 +19,6 @@
 <!-- LOGIN SCREEN -->
 <div id="login-screen" style="display:none">
   <div class="login-card">
-    <div style="font-size:3rem;margin-bottom:1rem">⚖️</div>
     <h2>Billing Tracker</h2>
     <p>Connect your Microsoft 365 account to pull emails, meetings, Teams messages, and generate billing-ready entries.</p>
     <div class="source-badges">
@@ -28,9 +28,9 @@
       <span class="badge badge-meeting-type">Meetings</span>
     </div>
     <button class="ms-btn" onclick="appLogin()">
-      <span>⬛</span> Sign in with Microsoft 365
+      Sign in with Microsoft 365
     </button>
-    <p style="font-size:0.7rem;color:var(--muted);margin-top:1rem;margin-bottom:0">GoDaddy-hosted Microsoft accounts supported</p>
+    <p style="font-size:11px;color:var(--muted);margin-top:16px;margin-bottom:0">GoDaddy-hosted Microsoft accounts supported</p>
   </div>
 </div>
 
@@ -38,10 +38,10 @@
 <div id="app-container" style="display:none">
   <header class="app-header">
     <div class="logo">
-      <div class="logo-icon">⚖️</div>
+      <div class="logo-icon">B</div>
       <div>
         <h1>Billing Tracker</h1>
-        <span>Oversight Dashboard</span>
+        <span>Dashboard</span>
       </div>
     </div>
     <div class="header-right">
@@ -74,7 +74,7 @@
       <label>Activity Description</label>
       <textarea id="edit-description" placeholder="e.g. Email correspondence re: regulatory strategy"></textarea>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group">
         <label>Date</label>
         <input type="text" id="edit-date">
@@ -84,7 +84,7 @@
         <input type="number" id="edit-duration" step="0.1" min="0.1">
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group">
         <label>Start Time</label>
         <input type="text" id="edit-start" placeholder="9:00 AM">

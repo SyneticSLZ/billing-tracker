@@ -65,6 +65,7 @@ function normalize(str) {
  */
 function matchSubfolderToClient(subfolderName, rmKeyData) {
   if (!rmKeyData || !subfolderName) return null;
+  if (!rmKeyData.exactMap || !rmKeyData.normalizedMap) return null;
 
   // 1. Exact match
   if (rmKeyData.exactMap[subfolderName]) {

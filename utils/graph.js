@@ -185,10 +185,36 @@ async function getEmailBody(token, emailId) {
   }
 }
 
+/**
+ * Get a full mailbox overview: Inbox total + all subfolders with counts.
+ */
+async function getMailboxOverview(token) {
+  const inboxData = await graphGet(token, '/me/mailFolders/Inbox');
+  const inboxId = inboxData.id;
+  const inboxTotal = inboxData.totalItemCount || 0;
+
+  const children = await graphGet(token, `/me/mailFolders/${inboxId}/childFolders`, {
+    $top: 100,
+    $select: 'id,displayName,totalItemCount,unreadItemCount'
+  });
+
+  const subfolders = (children.value || [])
+    .map(folder => ({
+      id: folder.id,
+      displayName: folder.displayName,
+      totalItemCount: folder.totalItemCount || 0,
+      unreadItemCount: folder.unreadItemCount || 0,
+    }))
+    .sort((a, b) => b.totalItemCount - a.totalItemCount);
+
+  return { inboxTotal, subfolders };
+}
+
 module.exports = {
   getEmails,
   getEmailsFromSubfolders,
   getInboxSubfolders,
+  getMailboxOverview,
   getCalendarEvents,
   getCallRecords,
   getTeamsMessages,

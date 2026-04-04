@@ -2,16 +2,18 @@ import { store } from '../state.js';
 import { navigate } from '../router.js';
 const navItems = [
   { section: 'Overview' },
-  { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+  { id: 'dashboard', icon: 'D', label: 'Dashboard' },
   { section: 'Data Sources' },
-  { id: 'emails', icon: '📧', label: 'Emails', countKey: 'email' },
-  { id: 'teams', icon: '💬', label: 'Teams', countKey: 'teams' },
-  { id: 'meetings', icon: '📅', label: 'Meetings', countKey: 'meeting' },
-  { id: 'calls', icon: '📞', label: 'Calls', countKey: 'call' },
+  { id: 'emails', icon: 'E', label: 'Emails', countKey: 'email' },
+  { id: 'teams', icon: 'T', label: 'Teams', countKey: 'teams' },
+  { id: 'meetings', icon: 'M', label: 'Meetings', countKey: 'meeting' },
+  { id: 'calls', icon: 'C', label: 'Calls', countKey: 'call' },
+  { section: 'Review' },
+  { id: 'calendar', icon: 'R', label: 'Calendar' },
   { section: 'Analysis' },
-  { id: 'clients', icon: '👥', label: 'Clients' },
+  { id: 'clients', icon: 'U', label: 'Clients' },
   { section: 'Preferences' },
-  { id: 'settings', icon: '⚙️', label: 'Settings' },
+  { id: 'settings', icon: 'S', label: 'Settings' },
 ];
 export function renderNav(container) {
   if (!container) return;

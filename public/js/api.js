@@ -70,10 +70,28 @@ export async function clearRMKey() {
   return res.json();
 }
 
+// ─── MAILBOX OVERVIEW ───
+
+export async function getMailboxOverview() {
+  const res = await fetch('/api/mailbox-overview');
+  return res.json();
+}
+
 // ─── SUBFOLDER ENDPOINTS ───
 
 export async function getSubfolders() {
   const res = await fetch('/api/subfolders');
+  return res.json();
+}
+
+// ─── MANUAL RM KEY ───
+
+export async function saveRMKeyManual(clients) {
+  const res = await fetch('/api/rmkey/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clients }),
+  });
   return res.json();
 }
 

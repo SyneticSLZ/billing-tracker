@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
-const { getEmails, getEmailsFromSubfolders, getInboxSubfolders, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody } = require('../utils/graph');
+const { getEmails, getEmailsFromSubfolders, getInboxSubfolders, getMailboxOverview, getCalendarEvents, getCallRecords, getTeamsMessages, getEmailBody } = require('../utils/graph');
 const { parseRMKey, matchSubfolderToClient } = require('../utils/rmkey');
 const {
   extractBillingInfo,
   applyRMKeyMapping,
+  detectDuplicates,
   emailsToBillingItems,
   eventsToBillingItems,
   teamsMessagesToBillingItems,
@@ -77,6 +78,48 @@ router.delete('/rmkey', requireAuth, (req, res) => {
   req.session.rmKeyData = null;
   req.session.rmKeyFileName = null;
   res.json({ success: true });
+});
+
+// ─── MAILBOX OVERVIEW ───
+
+router.get('/mailbox-overview', requireAuth, async (req, res) => {
+  try {
+    const token = req.session.accessToken;
+    const overview = await getMailboxOverview(token);
+    res.json(overview);
+  } catch (err) {
+    console.error('Mailbox overview error:', err);
+    res.status(500).json({ error: 'Failed to fetch mailbox overview: ' + err.message });
+  }
+});
+
+// ─── MANUAL RM KEY ───
+
+router.post('/rmkey/manual', requireAuth, express.json(), (req, res) => {
+  const { clients } = req.body;
+  if (!Array.isArray(clients)) {
+    return res.status(400).json({ error: 'clients must be an array' });
+  }
+  const { normalize } = require('../utils/rmkey');
+  const filteredClients = clients.filter(c => c.clientName && c.clientName.trim()).map(c => ({
+    clientName: c.clientName.trim(),
+    matterKey: (c.matterKey || '').trim(),
+    rate: parseFloat(c.rate) || 0,
+  }));
+  const exactMap = {};
+  const normalizedMap = {};
+  filteredClients.forEach(c => {
+    exactMap[c.clientName] = c;
+    normalizedMap[normalize(c.clientName)] = c;
+  });
+  const rmKeyData = { clients: filteredClients, exactMap, normalizedMap };
+  req.session.rmKeyData = rmKeyData;
+  req.session.rmKeyFileName = 'Manual Entry';
+  res.json({
+    success: true,
+    clientCount: rmKeyData.clients.length,
+    clients: rmKeyData.clients,
+  });
 });
 
 // ─── INBOX SUBFOLDERS ───
@@ -204,6 +247,9 @@ router.post('/fetch', requireAuth, async (req, res) => {
     }, rmKeyData);
 
     allItems = allItems.map(formatEntry);
+
+    // ── Phase 4: Detect potential duplicates ──
+    allItems = detectDuplicates(allItems);
 
     // Store data for drill-downs and export
     req.session.rawData = { emails, events, teamsMessages, callRecords };

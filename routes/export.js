@@ -3,6 +3,10 @@ const router = express.Router();
 const { stringify } = require('csv-stringify/sync');
 const ExcelJS = require('exceljs');
 const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 function requireAuth(req, res, next) {
   if (!req.session.accessToken) {
@@ -24,12 +28,15 @@ router.get('/csv', requireAuth, (req, res) => {
   const rows = items.map(item => ({
     'Client': item.client || '',
     'Date': item.date || '',
-    'Start Time': item.startFormatted || '',
-    'End Time': item.endFormatted || '',
+    'Start Time (EST)': item.startFormatted || '',
+    'End Time (EST)': item.endFormatted || '',
     'Duration (Hours)': item.durationHours || 0.1,
     'Activity Description': item.activityDescription || '',
     'Type': item.type || '',
-    'Source': item.source || ''
+    'Source': item.source || '',
+    'Matter Key': item.matterKey || '',
+    'Rate': item.rate || '',
+    'Possible Duplicate': item.possibleDuplicate ? 'Yes' : '',
   }));
 
   const csv = stringify(rows, { header: true });
@@ -153,9 +160,12 @@ router.get('/xlsx', requireAuth, async (req, res) => {
 
     // Add data rows — only items with an RM Key match get Matter-Key and Rate
     items.forEach(item => {
-      // Parse date for Excel date format
+      // Parse date for Excel date format — use startTime ISO for precision, fall back to parsed date string
       let excelDate = null;
-      if (item.date) {
+      if (item.startTime) {
+        const estDate = dayjs(item.startTime).tz('America/New_York');
+        excelDate = new Date(estDate.year(), estDate.month(), estDate.date());
+      } else if (item.date) {
         const parts = item.date.split('/');
         if (parts.length === 3) {
           excelDate = new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));

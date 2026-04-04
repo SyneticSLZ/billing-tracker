@@ -8,8 +8,8 @@ export function renderDonutChart(container, data) {
   function arcPath(startPct, endPct) { const startAngle = startPct*2*Math.PI-Math.PI/2; const endAngle = endPct*2*Math.PI-Math.PI/2; const x1=cx+r*Math.cos(startAngle),y1=cy+r*Math.sin(startAngle),x2=cx+r*Math.cos(endAngle),y2=cy+r*Math.sin(endAngle); const largeArc=(endPct-startPct)>0.5?1:0; return 'M '+x1+' '+y1+' A '+r+' '+r+' 0 '+largeArc+' 1 '+x2+' '+y2; }
   let svg = '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">';
   segments.forEach(seg => { if (seg.pct >= 0.999) svg += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+seg.color+'" stroke-width="'+strokeWidth+'" />'; else svg += '<path d="'+arcPath(seg.start,seg.end)+'" fill="none" stroke="'+seg.color+'" stroke-width="'+strokeWidth+'" stroke-linecap="round"><title>'+seg.label+': '+seg.value+'</title></path>'; });
-  svg += '<text x="'+cx+'" y="'+(cy-6)+'" text-anchor="middle" fill="#e8eaf0" font-family="\'Playfair Display\', serif" font-size="22" font-weight="700">'+total+'</text>';
-  svg += '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="#7a8499" font-family="\'DM Mono\', monospace" font-size="9">entries</text></svg>';
+  svg += '<text x="'+cx+'" y="'+(cy-6)+'" text-anchor="middle" fill="#ececef" font-family="Inter, sans-serif" font-size="20" font-weight="600">'+total+'</text>';
+  svg += '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="#71717a" font-family="Inter, sans-serif" font-size="9">entries</text></svg>';
   const legend = segments.map(s => '<div class="legend-item"><span class="legend-dot" style="background:'+s.color+'"></span>'+s.label+': '+s.value+'</div>').join('');
   container.innerHTML = '<div><div class="chart-container">'+svg+'</div><div class="chart-legend">'+legend+'</div></div>';
 }

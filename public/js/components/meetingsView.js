@@ -5,7 +5,7 @@ import { open as openDrilldown } from './drilldownPanel.js';
 import { openEditModal } from './editModal.js';
 export function renderMeetings(container) {
   const items = store.billingItems.filter(i => i.type?.toLowerCase().includes('meeting'));
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem"><h1 style="font-size:1.2rem;font-weight:600;display:flex;align-items:center;gap:8px"><span style="font-size:1.3rem">📅</span> Meetings <span style="font-size:0.8rem;color:var(--muted);font-weight:400">' + items.length + ' meetings</span></h1></div><div id="meetings-table-container"></div>';
+  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px">Meetings <span style="font-size:13px;color:var(--muted);font-weight:400">' + items.length + ' meetings</span></h1></div><div id="meetings-table-container"></div>';
   const table = new DataTable({
     container: container.querySelector('#meetings-table-container'),
     columns: [
@@ -17,7 +17,7 @@ export function renderMeetings(container) {
       { key: 'durationHours', label: 'Duration', sortable: true, sortType: 'number', width: '70px', render: (i) => '<span class="duration-chip">' + (i.durationHours || 0) + 'h</span>' },
     ],
     data: items, pageSize: store.settings.pageSize || 50, sortColumn: 'date', sortDir: 'desc',
-    searchFields: ['subject', 'participants', 'client'], emptyMessage: 'No meetings found', emptyIcon: '📅',
+    searchFields: ['subject', 'participants', 'client'], emptyMessage: 'No meetings found', emptyIcon: '',
     onRowClick: (item) => { openDrilldown('meeting', item, () => openEditModal(item, () => renderMeetings(container))); }
   });
   table.render();

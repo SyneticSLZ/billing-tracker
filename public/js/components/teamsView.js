@@ -5,7 +5,7 @@ import { open as openDrilldown } from './drilldownPanel.js';
 import { openEditModal } from './editModal.js';
 export function renderTeams(container) {
   const items = store.billingItems.filter(i => i.type === 'Teams Message');
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem"><h1 style="font-size:1.2rem;font-weight:600;display:flex;align-items:center;gap:8px"><span style="font-size:1.3rem">💬</span> Teams Messages <span style="font-size:0.8rem;color:var(--muted);font-weight:400">' + items.length + ' messages</span></h1></div><div id="teams-table-container"></div>';
+  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px">Teams Messages <span style="font-size:13px;color:var(--muted);font-weight:400">' + items.length + ' messages</span></h1></div><div id="teams-table-container"></div>';
   const table = new DataTable({
     container: container.querySelector('#teams-table-container'),
     columns: [
@@ -17,7 +17,7 @@ export function renderTeams(container) {
       { key: 'bodyPreview', label: 'Content', class: 'truncate muted', render: (i) => escapeHtml(truncate(stripHtml(i.bodyPreview || ''), 40)) },
     ],
     data: items, pageSize: store.settings.pageSize || 50, sortColumn: 'date', sortDir: 'desc',
-    searchFields: ['chatTopic', 'participants', 'client', 'bodyPreview'], emptyMessage: 'No Teams messages found', emptyIcon: '💬',
+    searchFields: ['chatTopic', 'participants', 'client', 'bodyPreview'], emptyMessage: 'No Teams messages found', emptyIcon: '',
     onRowClick: (item) => { openDrilldown('teams', item, () => openEditModal(item, () => renderTeams(container))); }
   });
   table.render();

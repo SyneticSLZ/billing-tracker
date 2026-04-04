@@ -286,9 +286,72 @@ function callLogsToBillingItems(rows) {
     .filter(Boolean);
 }
 
+/**
+ * Detect potential duplicate entries between calendar meetings and emails.
+ * Flags items with possibleDuplicate, duplicateGroupId, duplicateReason.
+ */
+function detectDuplicates(items) {
+  const meetings = items.filter(i => i.type === 'Meeting' || i.type === 'Teams Meeting');
+  const emails = items.filter(i => i.type === 'Email');
+
+  if (!meetings.length || !emails.length) return items;
+
+  let groupCounter = 0;
+
+  function normalizeSubject(s) {
+    return (s || '').toLowerCase().replace(/^(re:|fw:|fwd:)\s*/gi, '').trim();
+  }
+
+  function subjectMatch(a, b) {
+    const na = normalizeSubject(a);
+    const nb = normalizeSubject(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.includes(nb) || nb.includes(na)) return true;
+    // Check significant word overlap (3+ char words)
+    const wordsA = na.split(/\s+/).filter(w => w.length > 2);
+    const wordsB = nb.split(/\s+/).filter(w => w.length > 2);
+    const overlap = wordsA.filter(w => wordsB.includes(w)).length;
+    return overlap >= 2 && overlap >= Math.min(wordsA.length, wordsB.length) * 0.5;
+  }
+
+  function getDateKey(item) {
+    return dayjs(item.startTime).tz('America/New_York').format('YYYY-MM-DD');
+  }
+
+  // Build date index for emails
+  const emailsByDate = {};
+  emails.forEach(e => {
+    const dk = getDateKey(e);
+    if (!emailsByDate[dk]) emailsByDate[dk] = [];
+    emailsByDate[dk].push(e);
+  });
+
+  // For each meeting, find matching emails on same date with similar subject
+  meetings.forEach(meeting => {
+    const dk = getDateKey(meeting);
+    const candidates = emailsByDate[dk] || [];
+    for (const email of candidates) {
+      if (subjectMatch(meeting.subject, email.subject)) {
+        groupCounter++;
+        const gid = `dup-${groupCounter}`;
+        meeting.possibleDuplicate = true;
+        meeting.duplicateGroupId = meeting.duplicateGroupId || gid;
+        meeting.duplicateReason = 'Calendar event matches email on same date';
+        email.possibleDuplicate = true;
+        email.duplicateGroupId = email.duplicateGroupId || gid;
+        email.duplicateReason = 'Email matches calendar event on same date';
+      }
+    }
+  });
+
+  return items;
+}
+
 module.exports = {
   extractBillingInfo,
   applyRMKeyMapping,
+  detectDuplicates,
   emailsToBillingItems,
   eventsToBillingItems,
   teamsMessagesToBillingItems,

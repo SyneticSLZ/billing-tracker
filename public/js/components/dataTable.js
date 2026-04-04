@@ -45,7 +45,7 @@ export class DataTable {
     this.filters.forEach(f => { html += '<select class="table-filter" data-filter-key="' + f.key + '"><option value="">All ' + f.label + '</option>' + f.options.map(o => '<option value="' + escapeHtml(o) + '"' + (this.filterValues[f.key] === o ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('') + '</select>'; });
     html += '</div><div class="toolbar-right">';
     this.actions.forEach(a => { html += '<button class="btn ' + (a.class || 'btn-ghost btn-sm') + '" data-table-action="' + a.id + '">' + a.label + '</button>'; });
-    html += "<span style=\"font-size:0.72rem;color:var(--muted);font-family:'DM Mono',monospace\">" + filtered.length + ' items</span></div></div>';
+    html += '<span style="font-size:11px;color:var(--muted)">' + filtered.length + ' items</span></div></div>';
     html += '<div class="table-scroll"><table class="data-table"><thead><tr>';
     this.columns.forEach(col => {
       const sortable = col.sortable ? 'sortable' : '';

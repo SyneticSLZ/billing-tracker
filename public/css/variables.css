@@ -1,28 +1,42 @@
 :root {
-  --bg: #0d0f14;
-  --surface: #161a22;
-  --surface2: #1e2330;
-  --surface3: #252b3b;
-  --border: #2a3044;
-  --border-light: #353d55;
+  /* Surfaces — matte grey bg, glass cards */
+  --bg: #1a1b1f;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface2: rgba(255, 255, 255, 0.06);
+  --surface3: rgba(255, 255, 255, 0.09);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.14);
+
+  /* Accent */
   --accent: #4fd1c5;
+  --accent-dim: rgba(79, 209, 197, 0.1);
+  --accent-hover: rgba(79, 209, 197, 0.15);
   --accent2: #667eea;
-  --accent-dim: rgba(79, 209, 197, 0.15);
-  --accent2-dim: rgba(102, 126, 234, 0.15);
-  --text: #e8eaf0;
-  --text-secondary: #b8bdd0;
-  --muted: #7a8499;
-  --success: #48bb78;
-  --warning: #ed8936;
-  --danger: #fc8181;
-  --email-color: #667eea;
+  --accent2-dim: rgba(102, 126, 234, 0.1);
+
+  /* Text */
+  --fg: #ececef;
+  --text-secondary: #a1a1aa;
+  --muted: #71717a;
+
+  /* Status */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+
+  /* Source colors */
+  --email-color: #818cf8;
   --teams-color: #4fd1c5;
-  --call-color: #ed8936;
-  --meeting-color: #b794f4;
-  --sidebar-width: 240px;
-  --sidebar-collapsed: 64px;
-  --header-height: 56px;
-  --transition: 0.2s ease;
+  --call-color: #fb923c;
+  --meeting-color: #c084fc;
+
+  /* Layout */
+  --sidebar-width: 220px;
+  --sidebar-collapsed: 56px;
+  --header-height: 52px;
+
+  /* Shared */
   --radius: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 10px;
+  --transition: 0.15s ease;
 }
