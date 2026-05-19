@@ -15,6 +15,8 @@ export async function fetchBillingData(startDate, endDate, settings = {}, select
       chatLimit: settings.chatLimit || 50,
       messagesPerChat: settings.messagesPerChat || 50,
       selectedFolders,
+      // Default ON unless explicitly turned off in Settings
+      groupEmailsByThread: settings.groupEmailsByThread !== false,
     })
   });
   return response;
@@ -104,6 +106,26 @@ export async function setTimekeeperName(name) {
     body: JSON.stringify({ timekeeperName: name })
   });
   return res.json();
+}
+
+export async function getInternalAddresses() {
+  const res = await fetch('/export/settings/internal');
+  return res.json();
+}
+
+export async function setInternalAddresses(internalAddresses) {
+  const res = await fetch('/export/settings/internal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ internalAddresses })
+  });
+  return res.json();
+}
+
+// Reversible exclude/include — flips the billingExcluded flag in the session
+// (and any extra fields, e.g. clearing consolidatedInto when un-merging).
+export async function setEntryExcluded(id, excluded, extra = {}) {
+  return updateEntry(id, { billingExcluded: excluded, ...extra });
 }
 
 // ─── RAW DATA ───

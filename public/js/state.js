@@ -28,7 +28,8 @@ export const store = {
     chatLimit: 50,
     messagesPerChat: 50,
     showCharts: true,
-    groupEmailsByThread: false,
+    // Combine same-day, same-subject email into one billable entry (3 → .30).
+    groupEmailsByThread: true,
     hourlyRate: 0,
     timekeeperName: 'Mark Paxton',
   }

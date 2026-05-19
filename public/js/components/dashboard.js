@@ -1,6 +1,6 @@
 import { store } from '../state.js';
 import { fetchBillingData, getEntries, clearAllEntries, uploadRMKey, getRMKeyStatus, getSubfolders, getMailboxOverview, saveRMKeyManual } from '../api.js';
-import { toast, setDateRange as getDateRange, getRecentCompleteMonth, escapeHtml, getTypeColor } from '../utils.js';
+import { toast, setDateRange as getDateRange, getRecentCompleteMonth, escapeHtml, getTypeColor, billableItems, isBillable } from '../utils.js';
 import { renderStatsBar } from './statsBar.js';
 import { renderDonutChart, renderBarChart } from './chartPanel.js';
 import { showProgress, hideProgress, setProgress } from './progressBar.js';
@@ -713,11 +713,13 @@ async function handleFetch(container) {
 }
 
 function refreshDashboard(container) {
-  const items = store.billingItems;
+  const allItems = store.billingItems;
+  // Charts/clients reflect what will export; recent list shows all (flagged dimmed).
+  const items = billableItems(allItems);
   updateNavBadges();
   renderStatsBar(container.querySelector('#stats-grid'));
 
-  if (!items.length) {
+  if (!allItems.length) {
     container.querySelector('#charts-row').style.display = 'none';
     container.querySelector('#export-xlsx-btn').style.display = 'none';
     container.querySelector('#export-csv-btn').style.display = 'none';
@@ -762,7 +764,7 @@ function refreshDashboard(container) {
   }
 
   renderTopClients(container.querySelector('#top-clients-container'), items);
-  renderRecentEntries(container.querySelector('#recent-entries-container'), items);
+  renderRecentEntries(container.querySelector('#recent-entries-container'), allItems);
 }
 
 function renderTopClients(container, items) {
@@ -812,11 +814,14 @@ function renderRecentEntries(container, items) {
       const typeClass = (i.type || '').toLowerCase().includes('email') ? 'type-email'
         : (i.type || '').toLowerCase().includes('teams') || (i.type || '').toLowerCase().includes('meeting') ? 'type-teams'
         : 'type-call';
-      return `<tr style="cursor:pointer" data-recent-id="${escapeHtml(i.id)}">
-        <td><span class="type-badge ${typeClass}">${escapeHtml(i.type || '-')}</span></td>
+      const excluded = !isBillable(i);
+      const stateBadge = i.isConsolidated ? `<span style="color:var(--accent);font-size:10px;margin-left:5px" title="${i.mergedCount} same-subject emails combined">🔗 ${i.mergedCount}</span>`
+        : excluded ? `<span style="color:var(--muted);font-size:10px;margin-left:5px" title="${escapeHtml(i.excludeReason || 'Non-billable')}">excl</span>` : '';
+      return `<tr style="cursor:pointer;${excluded ? 'opacity:0.55' : ''}" data-recent-id="${escapeHtml(i.id)}" ${i.excludeReason ? `title="${escapeHtml(i.excludeReason)}"` : ''}>
+        <td><span class="type-badge ${typeClass}">${escapeHtml(i.type || '-')}</span>${stateBadge}</td>
         <td style="font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(!i.client || i.client.includes('UNKNOWN')) ? 'color:var(--warning)' : ''}">${escapeHtml(i.client || 'UNKNOWN')}</td>
         <td style="color:var(--muted);font-size:12px">${escapeHtml(i.date || '-')}</td>
-        <td><span class="duration-chip">${i.durationHours || 0.1}h</span></td>
+        <td><span class="duration-chip" style="${excluded ? 'text-decoration:line-through;opacity:0.6' : ''}">${i.durationHours || 0.1}h</span></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;

@@ -56,33 +56,56 @@ async function getEmailsFromSubfolders(token, startDate, endDate, limit = 250, f
   const allEmails = [];
   const filter = `receivedDateTime ge ${startDate}T00:00:00Z and receivedDateTime le ${endDate}T23:59:59Z`;
   const select = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,conversationId,importance,hasAttachments';
+  // PidTagMessageClass (tag 0x001A) distinguishes meeting requests/responses
+  // (IPM.Schedule.Meeting.*) from regular mail. Locale-independent, unlike
+  // subject prefixes. Some tenants reject this $expand — we degrade gracefully.
+  const MSG_CLASS_PROP = "singleValueExtendedProperties($filter=id eq 'String 0x001A')";
+  let expandSupported = true;
 
   for (const folder of foldersToFetch) {
+    // Lift the MAPI message class onto a flat `messageClass` field and tag
+    // each email with its subfolder (= client) name.
+    const tagEmail = (email) => {
+      const ext = (email.singleValueExtendedProperties || [])
+        .find(p => (p.id || '').toLowerCase().includes('0x001a'));
+      return {
+        ...email,
+        messageClass: ext ? ext.value : (email.messageClass || ''),
+        folderName: folder.displayName,  // This IS the client name
+        folderId: folder.id,
+      };
+    };
+
     try {
       let nextLink = null;
-      const initialData = await graphGet(token, `/me/mailFolders/${folder.id}/messages`, {
+      const baseParams = {
         $filter: filter,
         $select: select,
         $top: 100,
         $orderby: 'receivedDateTime desc'
-      });
+      };
+      let initialData;
+      try {
+        initialData = await graphGet(token, `/me/mailFolders/${folder.id}/messages`,
+          expandSupported ? { ...baseParams, $expand: MSG_CLASS_PROP } : baseParams);
+      } catch (expandErr) {
+        if (expandSupported) {
+          console.warn(`  ⚠️ messageClass $expand rejected — falling back to subject heuristic:`, expandErr.message);
+          expandSupported = false;
+          initialData = await graphGet(token, `/me/mailFolders/${folder.id}/messages`, baseParams);
+        } else {
+          throw expandErr;
+        }
+      }
 
-      const folderEmails = (initialData.value || []).map(email => ({
-        ...email,
-        folderName: folder.displayName,  // This IS the client name
-        folderId: folder.id,
-      }));
+      const folderEmails = (initialData.value || []).map(tagEmail);
       allEmails.push(...folderEmails);
       nextLink = initialData['@odata.nextLink'] || null;
 
       // Paginate within folder
       while (nextLink && allEmails.length < limit) {
         const data = await graphGet(token, nextLink);
-        const moreEmails = (data.value || []).map(email => ({
-          ...email,
-          folderName: folder.displayName,
-          folderId: folder.id,
-        }));
+        const moreEmails = (data.value || []).map(tagEmail);
         allEmails.push(...moreEmails);
         nextLink = data['@odata.nextLink'] || null;
       }

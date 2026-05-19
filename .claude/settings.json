@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(timeout 5 node server.js)"
+      "Bash(timeout 5 node server.js)",
+      "Bash(grep -E \"^d|\\\\.js$|\\\\.json$\")",
+      "Bash(cat > *)",
+      "Bash(grep -iE '\\\\.\\(xlsx|xls|csv\\)$')",
+      "Bash(node -e ' *)",
+      "Bash(mkdir -p /Users/romehmi/.claude/plans)",
+      "Bash(cp \"/Users/romehmi/Downloads/Financial Import Sample.xlsx\" \"/Users/romehmi/Downloads/billing-tracker/templates/Financial Import Sample.xlsx\")",
+      "Bash(shasum -a 256 \"/Users/romehmi/Downloads/billing-tracker/templates/Financial Import Sample.xlsx\")",
+      "Bash(node -e \"require\\('./utils/graph'\\); require\\('./utils/billing'\\); require\\('./routes/export'\\); require\\('./routes/data'\\); console.log\\('all modules load OK'\\);\")",
+      "Bash(grep -n \"require\\('../utils/billing'\\)\\\\|require\\(\\\\\"../utils/billing\\\\\"\\)\\\\|emailsToBillingItems\\\\|applyRMKeyMapping\\\\|extractBillingInfo\\\\|detectDuplicates\\\\|const { startDate\" routes/data.js)",
+      "Bash(node -e \"require\\('./routes/data'\\); require\\('./routes/export'\\); require\\('./utils/billing'\\); require\\('./utils/graph'\\); console.log\\('pipeline modules OK'\\);\")"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/Users/romehmi/.claude/plans"
     ]
   }
 }

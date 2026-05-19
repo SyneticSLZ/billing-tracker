@@ -43,6 +43,19 @@ function getDurationMinutes(start, end) {
   return Math.round((new Date(end) - new Date(start)) / 60000);
 }
 
+// ─── Shared helpers (used by detectDuplicates + consolidateEmails) ───
+
+// Strip reply/forward prefixes so "RE: Foo" and "Fwd: Foo" group together.
+function normalizeSubject(s) {
+  return (s || '').toLowerCase().replace(/^((re|fw|fwd):\s*)+/gi, '').trim();
+}
+
+// Calendar date (Eastern Time) an item belongs to, e.g. "2026-03-04".
+// Same timezone basis used everywhere so grouping/dedup never disagree.
+function getEasternDateKey(item) {
+  return dayjs(item.startTime).tz('America/New_York').format('YYYY-MM-DD');
+}
+
 function formatEntry(entry) {
   const start = dayjs(entry.startTime).tz('America/New_York');
   const end = dayjs(entry.endTime).tz('America/New_York');
@@ -190,6 +203,7 @@ function emailsToBillingItems(emails) {
     ccRecipients: (email.ccRecipients || []).map(r => r.emailAddress?.address).filter(Boolean).join(', '),
     bodyPreview: email.bodyPreview,
     conversationId: email.conversationId,
+    messageClass: email.messageClass || '',
     importance: email.importance,
     hasAttachments: email.hasAttachments,
     startTime: email.receivedDateTime,
@@ -298,10 +312,6 @@ function detectDuplicates(items) {
 
   let groupCounter = 0;
 
-  function normalizeSubject(s) {
-    return (s || '').toLowerCase().replace(/^(re:|fw:|fwd:)\s*/gi, '').trim();
-  }
-
   function subjectMatch(a, b) {
     const na = normalizeSubject(a);
     const nb = normalizeSubject(b);
@@ -315,21 +325,17 @@ function detectDuplicates(items) {
     return overlap >= 2 && overlap >= Math.min(wordsA.length, wordsB.length) * 0.5;
   }
 
-  function getDateKey(item) {
-    return dayjs(item.startTime).tz('America/New_York').format('YYYY-MM-DD');
-  }
-
   // Build date index for emails
   const emailsByDate = {};
   emails.forEach(e => {
-    const dk = getDateKey(e);
+    const dk = getEasternDateKey(e);
     if (!emailsByDate[dk]) emailsByDate[dk] = [];
     emailsByDate[dk].push(e);
   });
 
   // For each meeting, find matching emails on same date with similar subject
   meetings.forEach(meeting => {
-    const dk = getDateKey(meeting);
+    const dk = getEasternDateKey(meeting);
     const candidates = emailsByDate[dk] || [];
     for (const email of candidates) {
       if (subjectMatch(meeting.subject, email.subject)) {
@@ -348,6 +354,159 @@ function detectDuplicates(items) {
   return items;
 }
 
+// ─── Feature 1: filter purely-internal admin email (Karisha ↔ Mark) ───
+//
+// Parses the comma/semicolon/newline list the user enters in Settings. Each
+// token is either a full address ("mark@firm.com") or a domain ("firm.com"
+// or "@firm.com"). An email is excluded ONLY when EVERY participant
+// (from + to + cc) is internal — so anything involving a client or any
+// outside party stays billable. Non-destructive: sets flags, never deletes.
+function parseInternalList(raw) {
+  return (raw || '')
+    .split(/[,;\n]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isInternalAddress(addr, internalList) {
+  const a = (addr || '').trim().toLowerCase();
+  if (!a) return false;
+  const domain = a.split('@')[1] || '';
+  return internalList.some(p => {
+    if (p.includes('@') && !p.startsWith('@')) return a === p;          // exact address
+    const dom = p.replace(/^@/, '');                                    // domain pattern
+    return !!domain && (domain === dom || domain.endsWith('.' + dom));
+  });
+}
+
+function collectAddresses(item) {
+  const parts = [item.participants, item.toRecipients, item.ccRecipients];
+  return parts
+    .flatMap(p => (p || '').split(/[,;]+/))
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function applyInternalFilter(items, internalRaw) {
+  const internalList = parseInternalList(internalRaw);
+  if (!internalList.length) return items;
+
+  items.forEach(item => {
+    if (item.type !== 'Email' || item.billingExcluded) return;
+    const addrs = collectAddresses(item);
+    if (!addrs.length) return; // can't determine — keep it (safe default)
+    if (addrs.every(a => isInternalAddress(a, internalList))) {
+      item.billingExcluded = true;
+      item.excludeReason = 'Internal admin email (all participants internal)';
+      item.excludeKind = 'internal';
+    }
+  });
+  return items;
+}
+
+// ─── Feature 2: filter Outlook/Teams meeting invitations & responses ───
+//
+// Primary signal is the locale-independent MAPI message class
+// (IPM.Schedule.Meeting.*). Subject-prefix matching is an EN fallback for
+// tenants that don't expose the extended property.
+const MEETING_SUBJECT_RE =
+  /^\s*(accepted|declined|tentative|cancell?ed|updated|new time proposed|meeting forward notification):/i;
+
+function applyMeetingInviteFilter(items) {
+  items.forEach(item => {
+    if (item.type !== 'Email' || item.billingExcluded) return;
+    const cls = (item.messageClass || '');
+    const isMeeting =
+      /^IPM\.Schedule\.Meeting\./i.test(cls) ||
+      MEETING_SUBJECT_RE.test(item.subject || '');
+    if (isMeeting) {
+      item.billingExcluded = true;
+      item.excludeReason = 'Meeting invitation/response (not billable work)';
+      item.excludeKind = 'meeting';
+    }
+  });
+  return items;
+}
+
+// ─── Feature 3: consolidate same-day, same-subject email into one entry ───
+//
+// Non-destructive & fully reversible: every original email is KEPT in the
+// list and merely flagged (consolidatedInto + billingExcluded) so it stays
+// visible and can be split back out from the UI. A single synthetic combined
+// entry represents the group for billing. Because each email is a fixed
+// 6-minute unit, an N-email group's endTime = start + 6·N min, so the
+// existing formatEntry/roundToTenthHour yields exactly 0.10·N (3 → 0.30) —
+// no change to the rounding code.
+function consolidateEmails(items) {
+  const groups = new Map();
+
+  items.forEach(item => {
+    if (item.type !== 'Email' || item.billingExcluded) return;
+    const subjKey = normalizeSubject(item.subject);
+    if (!subjKey) return; // never group blank-subject email together
+    const clientKey = (item.folderName || item.client || '').toLowerCase();
+    const key = `${clientKey}|${getEasternDateKey(item)}|${subjKey}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+
+  let counter = 0;
+  const combinedEntries = [];
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    const count = group.length;
+    const earliest = group[0];
+    const groupId = `cons-${++counter}`;
+
+    group.forEach(child => {
+      child.consolidatedInto = groupId;
+      child.billingExcluded = true;
+      child.excludeReason = `Rolled into combined entry (${count} emails, same subject/day)`;
+      child.excludeKind = 'consolidated-child';
+    });
+
+    const snippets = group
+      .map(c => (c.bodyPreview || '').trim())
+      .filter(Boolean)
+      .join(' | ')
+      .slice(0, 800);
+
+    combinedEntries.push({
+      id: `group-${groupId}`,
+      sourceId: earliest.sourceId,
+      type: 'Email',
+      source: 'Outlook',
+      subject: earliest.subject,
+      participants: earliest.participants,
+      toRecipients: earliest.toRecipients,
+      ccRecipients: earliest.ccRecipients,
+      bodyPreview: snippets,
+      conversationId: earliest.conversationId,
+      messageClass: earliest.messageClass,
+      importance: earliest.importance,
+      hasAttachments: group.some(c => c.hasAttachments),
+      startTime: earliest.startTime,
+      // 6 min per email → roundToTenthHour(6·N) = 0.10·N
+      endTime: dayjs(earliest.startTime).add(6 * count, 'minute').toISOString(),
+      folderName: earliest.folderName,
+      rawClient: earliest.rawClient,
+      client: earliest.client,
+      matterKey: earliest.matterKey,
+      rate: earliest.rate,
+      rmKeyMatched: earliest.rmKeyMatched,
+      rawDescription: '',
+      isConsolidated: true,
+      mergedCount: count,
+      mergedSourceIds: group.map(c => c.id),
+      billingExcluded: false,
+    });
+  }
+
+  return combinedEntries.length ? items.concat(combinedEntries) : items;
+}
+
 module.exports = {
   extractBillingInfo,
   applyRMKeyMapping,
@@ -357,5 +516,10 @@ module.exports = {
   teamsMessagesToBillingItems,
   callLogsToBillingItems,
   formatEntry,
-  roundToTenthHour
+  roundToTenthHour,
+  normalizeSubject,
+  getEasternDateKey,
+  applyInternalFilter,
+  applyMeetingInviteFilter,
+  consolidateEmails
 };

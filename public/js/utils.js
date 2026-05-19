@@ -104,3 +104,9 @@ export function getInitials(name) {
   if (!name) return '?';
   return name.split(/[\s@]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
+
+// An item counts toward billing/totals/export unless it was flagged out
+// (internal admin email, meeting invite/response, or a rolled-up child of a
+// consolidated entry). Combined entries are NOT excluded — they bill the group.
+export function isBillable(item) { return !item || !item.billingExcluded; }
+export function billableItems(items) { return (items || []).filter(isBillable); }

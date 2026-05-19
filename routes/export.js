@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const { stringify } = require('csv-stringify/sync');
 const ExcelJS = require('exceljs');
 const dayjs = require('dayjs');
@@ -7,6 +8,18 @@ const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// Official NextGen / Rocket Matter import template, vendored from the
+// "Financial Import Sample.xlsx" provided by the firm. The export loads this
+// workbook so the output matches it exactly (instructions tab, List, version,
+// Expense sheet, Time headers/styling) — only Time data rows are written.
+const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'Financial Import Sample.xlsx');
+
+// Items flagged billingExcluded (internal/admin email, meeting invites, or
+// rolled-up children of a consolidated entry) are never written to an export.
+function exportableItems(session) {
+  return (session.billingItems || []).filter(i => i.billingExcluded !== true);
+}
 
 function requireAuth(req, res, next) {
   if (!req.session.accessToken) {
@@ -19,7 +32,7 @@ function requireAuth(req, res, next) {
  * Legacy CSV export (Rocket Matter format).
  */
 router.get('/csv', requireAuth, (req, res) => {
-  const items = req.session.billingItems || [];
+  const items = exportableItems(req.session);
 
   if (!items.length) {
     return res.status(400).json({ error: 'No billing entries to export' });
@@ -49,33 +62,23 @@ router.get('/csv', requireAuth, (req, res) => {
 
 /**
  * NextGen Financial Import XLSX export.
- * Generates a workbook matching the Financial_Import_Sample.xlsx format.
- * Only populates the "Time" sheet with billing entries.
  *
- * Time sheet columns:
- *   A: Time-Key          (blank)
- *   B: Matter-Key         (from RM Key lookup)
- *   C: Client Name        (from RM Key / subfolder)
- *   D: Matter Name        (blank)
- *   E: Date               (MM/DD/YYYY)
- *   F: Timekeeper-Name    (from settings or default)
- *   G: Rate               (from RM Key lookup)
- *   H: ActivityCode       (blank)
- *   I: TaskCode           (blank)
- *   J: Task-Name          (blank)
- *   K: Description        (AI-generated activity description)
- *   L: Notes              (blank)
- *   M: Billing-Type       ("Billable")
- *   N: Billed-Hours       (blank)
- *   O: Billed-Minutes     (blank)
- *   P: Total-Billed-Hours (duration rounded to 0.1h)
- *   Q: Tax1               (blank)
- *   R: Tax2               (blank)
- *   S: Amount             (blank)
+ * Loads the vendored official template (TEMPLATE_PATH) and writes billing
+ * entries into the existing "Time" sheet starting at row 2. The header row,
+ * the "1. Data Entry Instructions" / "2. Data Import Instructions" tabs, the
+ * "List" validation sheet, the "version" sheet, and the "Expense" sheet are
+ * all preserved exactly as shipped — so the output matches the sample
+ * byte-for-byte except for the Time data rows. No manual copy/paste needed.
+ *
+ * Time sheet columns (A–S, headers already in the template):
+ *   A Time-Key(blank)  B Matter-Key  C Client Name  D Matter Name(blank)
+ *   E Date(MM/DD/YYYY) F Timekeeper-Name  G Rate  H ActivityCode(blank)
+ *   I TaskCode(blank)  J Task-Name(blank)  K Description  L Notes(blank)
+ *   M Billing-Type     N Billed-Hours(blank)  O Billed-Minutes(blank)
+ *   P Total-Billed-Hours  Q Tax1(blank)  R Tax2(blank)  S Amount(blank)
  */
 router.get('/xlsx', requireAuth, async (req, res) => {
-  const items = req.session.billingItems || [];
-  const rmKeyData = req.session.rmKeyData || null;
+  const items = exportableItems(req.session);
 
   if (!items.length) {
     return res.status(400).json({ error: 'No billing entries to export' });
@@ -86,81 +89,23 @@ router.get('/xlsx', requireAuth, async (req, res) => {
 
   try {
     const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(TEMPLATE_PATH);
 
-    // ── Time Sheet ──
-    const timeSheet = workbook.addWorksheet('Time');
+    const timeSheet = workbook.getWorksheet('Time');
+    if (!timeSheet) {
+      return res.status(500).json({ error: 'Import template is missing its "Time" sheet' });
+    }
 
-    // Headers (matching Financial_Import_Sample.xlsx exactly)
-    const headers = [
-      'Time-Key',
-      'Matter-Key',
-      'Client Name',
-      'Matter Name',
-      'Date',
-      'Timekeeper-Name',
-      'Rate',
-      'ActivityCode',
-      'TaskCode',
-      'Task-Name',
-      'Description',
-      'Notes',
-      'Billing-Type',
-      'Billed-Hours',
-      'Billed-Minutes',
-      'Total-Billed-Hours',
-      'Tax1',
-      'Tax2',
-      'Amount'
-    ];
+    // The template ships with one sample data row (row 2). We overwrite the
+    // Time sheet from row 2 down with real data; every one of the 19 columns
+    // is written explicitly (null for blank cells) so the sample row — and
+    // any stale data from a prior write — is fully replaced. Rows below the
+    // data stay blank; the NextGen importer skips rows with no Matter-Key /
+    // Total-Billed-Hours. Other sheets are never touched.
+    const lastDataRow = Math.max(timeSheet.actualRowCount, items.length + 1);
 
-    const headerRow = timeSheet.addRow(headers);
-
-    // Style headers — yellow background for required fields
-    const requiredCols = [2, 7]; // Matter-Key (B), Rate (G)
-    const condRequiredCols = [10, 11]; // Task-Name (J), Description (K)
-
-    headerRow.eachCell((cell, colNumber) => {
-      cell.font = { bold: true, size: 10, name: 'Arial' };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = {
-        top: { style: 'thin' },
-        bottom: { style: 'thin' },
-        left: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-      if (requiredCols.includes(colNumber)) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-      } else if (condRequiredCols.includes(colNumber)) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC000' } };
-      }
-    });
-
-    // Set column widths
-    timeSheet.columns = [
-      { width: 12 }, // A: Time-Key
-      { width: 12 }, // B: Matter-Key
-      { width: 30 }, // C: Client Name
-      { width: 20 }, // D: Matter Name
-      { width: 14 }, // E: Date
-      { width: 22 }, // F: Timekeeper-Name
-      { width: 10 }, // G: Rate
-      { width: 14 }, // H: ActivityCode
-      { width: 12 }, // I: TaskCode
-      { width: 20 }, // J: Task-Name
-      { width: 50 }, // K: Description
-      { width: 20 }, // L: Notes
-      { width: 14 }, // M: Billing-Type
-      { width: 14 }, // N: Billed-Hours
-      { width: 14 }, // O: Billed-Minutes
-      { width: 18 }, // P: Total-Billed-Hours
-      { width: 10 }, // Q: Tax1
-      { width: 10 }, // R: Tax2
-      { width: 12 }, // S: Amount
-    ];
-
-    // Add data rows — only items with an RM Key match get Matter-Key and Rate
-    items.forEach(item => {
-      // Format date as plain MM/DD/YYYY string to avoid Excel timezone issues
+    items.forEach((item, i) => {
+      // Format date as a plain MM/DD/YYYY string to avoid Excel timezone drift
       let dateStr = '';
       if (item.startTime) {
         dateStr = dayjs(item.startTime).tz('America/New_York').format('MM/DD/YYYY');
@@ -169,7 +114,7 @@ router.get('/xlsx', requireAuth, async (req, res) => {
         dateStr = item.date;
       }
 
-      const row = timeSheet.addRow([
+      const values = [
         null,                                           // A: Time-Key (blank)
         item.matterKey || null,                         // B: Matter-Key
         item.client || '',                              // C: Client Name
@@ -189,35 +134,22 @@ router.get('/xlsx', requireAuth, async (req, res) => {
         null,                                           // Q: Tax1
         null,                                           // R: Tax2
         null,                                           // S: Amount
-      ]);
+      ];
 
-      // Style data rows
-      row.eachCell((cell) => {
-        cell.font = { size: 10, name: 'Arial' };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-          bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-        };
-      });
+      const row = timeSheet.getRow(i + 2);
+      values.forEach((v, c) => { row.getCell(c + 1).value = v; });
+      row.commit();
     });
 
-    // ── Expense Sheet (empty, for template compliance) ──
-    const expenseSheet = workbook.addWorksheet('Expense');
-    const expenseHeaders = [
-      'Expense-Key', 'Matter-Key', 'Client Name', 'Matter Name',
-      'Timekeeper-Name', 'Billing-Type', 'Date', 'Quantity',
-      'Price', 'Tax1-Rate', 'Tax2-Rate', 'ExpenseCode',
-      'Expense-Name', 'Description', 'Notes', 'Amount'
-    ];
-    const expHeaderRow = expenseSheet.addRow(expenseHeaders);
-    expHeaderRow.eachCell((cell) => {
-      cell.font = { bold: true, size: 10, name: 'Arial' };
-    });
+    // Clear any rows that the template's sample data occupied beyond our data
+    // (defensive — the shipped template only has the single sample row 2).
+    for (let r = items.length + 2; r <= lastDataRow; r++) {
+      const row = timeSheet.getRow(r);
+      for (let c = 1; c <= 19; c++) row.getCell(c).value = null;
+      row.commit();
+    }
 
-    // Generate filename
     const filename = `nextgen-financial-import-${dayjs().format('YYYY-MM-DD')}.xlsx`;
-
-    // Send as download
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -238,6 +170,22 @@ router.post('/settings/timekeeper', requireAuth, (req, res) => {
   if (!timekeeperName) return res.status(400).json({ error: 'timekeeperName is required' });
   req.session.timekeeperName = timekeeperName;
   res.json({ success: true, timekeeperName });
+});
+
+/**
+ * Internal / non-billable addresses for the Karisha↔Mark admin-email filter.
+ * Comma / semicolon / newline separated; each token is a full address
+ * ("mark@firm.com") or a domain ("firm.com" / "@firm.com"). Editable anytime
+ * from the Settings panel — no code change needed to update.
+ */
+router.get('/settings/internal', requireAuth, (req, res) => {
+  res.json({ internalAddresses: req.session.internalAddresses || '' });
+});
+
+router.post('/settings/internal', requireAuth, (req, res) => {
+  const { internalAddresses } = req.body;
+  req.session.internalAddresses = typeof internalAddresses === 'string' ? internalAddresses : '';
+  res.json({ success: true, internalAddresses: req.session.internalAddresses });
 });
 
 module.exports = router;

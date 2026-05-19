@@ -12,7 +12,10 @@ const {
   eventsToBillingItems,
   teamsMessagesToBillingItems,
   callLogsToBillingItems,
-  formatEntry
+  formatEntry,
+  applyInternalFilter,
+  applyMeetingInviteFilter,
+  consolidateEmails
 } = require('../utils/billing');
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -162,6 +165,8 @@ router.get('/subfolders', requireAuth, async (req, res) => {
 
 router.post('/fetch', requireAuth, async (req, res) => {
   const { startDate, endDate, emailLimit, chatLimit, messagesPerChat, selectedFolders } = req.body;
+  // Default ON: combine same-day same-subject email into one entry.
+  const consolidate = req.body.groupEmailsByThread !== false;
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
   }
@@ -227,6 +232,27 @@ router.post('/fetch', requireAuth, async (req, res) => {
         percent: 64,
         phase: 'mapping'
       });
+    }
+
+    // ── Phase 2.6: Non-destructive filters + consolidation ──
+    // Items are flagged (billingExcluded / consolidatedInto), never dropped,
+    // so everything stays visible in the UI and is reversible before export.
+    sendEvent({ type: 'progress', message: 'Filtering internal & meeting email...', percent: 64, phase: 'filter' });
+    allItems = applyInternalFilter(allItems, req.session.internalAddresses);
+    allItems = applyMeetingInviteFilter(allItems);
+    const excludedCount = allItems.filter(i => i.billingExcluded).length;
+
+    if (consolidate) {
+      allItems = consolidateEmails(allItems);
+      const combinedCount = allItems.filter(i => i.isConsolidated).length;
+      sendEvent({
+        type: 'progress',
+        message: `${excludedCount} flagged non-billable; ${combinedCount} combined email entries`,
+        percent: 64,
+        phase: 'filter'
+      });
+    } else {
+      sendEvent({ type: 'progress', message: `${excludedCount} flagged non-billable`, percent: 64, phase: 'filter' });
     }
 
     const totalItems = allItems.length;
