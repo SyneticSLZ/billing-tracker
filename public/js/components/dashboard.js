@@ -1,5 +1,5 @@
 import { store } from '../state.js';
-import { fetchBillingData, getEntries, clearAllEntries, uploadRMKey, getRMKeyStatus, getSubfolders, getMailboxOverview, saveRMKeyManual } from '../api.js';
+import { fetchBillingData, getEntries, clearAllEntries, getSubfolders, getMailboxOverview } from '../api.js';
 import { toast, setDateRange as getDateRange, getRecentCompleteMonth, escapeHtml, getTypeColor, billableItems, isBillable } from '../utils.js';
 import { renderStatsBar } from './statsBar.js';
 import { renderDonutChart, renderBarChart } from './chartPanel.js';
@@ -52,23 +52,6 @@ export function renderDashboard(container) {
       </div>
       <div class="card-body" id="mailbox-overview-body">
         <div style="font-size:13px;color:var(--muted);padding:8px 0">Loading mailbox...</div>
-      </div>
-    </div>
-
-    <!-- RM Key / Client Mapping (Inline Editor) -->
-    <div class="card" style="margin-bottom:16px" id="rmkey-section">
-      <div class="card-header">
-        <h2>Client Mapping</h2>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="rmkey-status" style="font-size:12px;color:var(--muted)">No clients configured</span>
-          <button class="btn btn-ghost btn-xs" id="rmkey-upload-btn" title="Import from Excel">Upload Excel</button>
-          <input type="file" id="rmkey-file-input" accept=".xlsx,.xls" style="display:none">
-          <button class="btn btn-primary btn-xs" id="rmkey-save-btn" style="display:none">Save</button>
-          <button class="btn btn-ghost btn-xs" id="rmkey-clear-btn" style="display:none">Clear All</button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div id="rmkey-editor"></div>
       </div>
     </div>
 
@@ -240,9 +223,6 @@ export function renderDashboard(container) {
 
   initUploadZone(container.querySelector('#upload-zone'), () => refreshDashboard(container));
 
-  // ── RM Key Inline Editor ──
-  initRMKeyEditor(container);
-
   // ── Mailbox overview ──
   container.querySelector('#refresh-mailbox-btn').addEventListener('click', () => loadMailboxOverview(container));
   loadMailboxOverview(container);
@@ -250,8 +230,7 @@ export function renderDashboard(container) {
   // ── Load existing entries ──
   loadExisting(container);
 
-  // ── Load RM Key status ──
-  loadRMKeyStatus(container);
+  // Client Mapping lives on its own tab; it self-bootstraps at app start.
 }
 
 // ─── MAILBOX OVERVIEW ───
@@ -353,250 +332,9 @@ function renderMailboxFolders(body, subfolders) {
   }
 }
 
-// ─── RM KEY INLINE EDITOR ───
+// ─── RM Key UI moved to its own tab — see clientMappingView.js ───
+// (Eager bootstrap of defaults runs from app.js → initClientMapping().)
 
-const DEFAULT_RM_KEYS = [
-  { clientName: 'A1 Pulse Technologies, LLC', matterKey: '13', rate: '400' },
-  { clientName: 'Altrazeal Life Sciences Inc.', matterKey: '25', rate: '400' },
-  { clientName: 'Altro Pharmaceuticals, Inc', matterKey: '30', rate: '450' },
-  { clientName: 'Amici Pharmaceuticals, Inc.', matterKey: '27', rate: '400' },
-  { clientName: 'AppCo Pharma, LLC', matterKey: '12', rate: '300' },
-  { clientName: 'AroCell AB', matterKey: '18', rate: '400' },
-  { clientName: 'Asieris Pharmaceuticals', matterKey: '6', rate: '400' },
-  { clientName: 'Avast Therapeutics, Inc.', matterKey: '37', rate: '450' },
-  { clientName: 'Avem Healthcare', matterKey: '5', rate: '200' },
-  { clientName: 'BHC Management, LLC', matterKey: '14', rate: '450' },
-  { clientName: 'Bright Path Labs, Inc. - ANDA', matterKey: '2', rate: '150' },
-  { clientName: 'CeleCor Therapeutics, Inc.', matterKey: '38', rate: '450' },
-  { clientName: 'Denovo Biopharma', matterKey: '7', rate: '450' },
-  { clientName: 'Elora Medical LLC and Vixel Agency LLC', matterKey: '24', rate: '400' },
-  { clientName: 'Entegrion', matterKey: '1', rate: '150' },
-  { clientName: 'Fourth Axis, LLC', matterKey: '20', rate: '400' },
-  { clientName: 'Hilom LLC', matterKey: '39', rate: '450' },
-  { clientName: 'HyMed', matterKey: '11', rate: '400' },
-  { clientName: 'KELLS, Inc.', matterKey: '3', rate: '150' },
-  { clientName: 'NutriFlair', matterKey: '29', rate: '450' },
-  { clientName: 'PEARL GROUP LLC', matterKey: '23', rate: '400' },
-  { clientName: 'PHARMASSETX INC.', matterKey: '33', rate: '450' },
-  { clientName: 'PSI Research Center LLC', matterKey: '34', rate: '450' },
-  { clientName: 'RAIS INTERNATIONAL LLC', matterKey: '28', rate: '400' },
-  { clientName: 'Raphael Pharmaceutical, Inc.', matterKey: '35', rate: '450' },
-  { clientName: 'Regenerative Research Group LLC', matterKey: '26', rate: '400' },
-  { clientName: 'RNA BIO/ PHARMA INC.', matterKey: '32', rate: '450' },
-  { clientName: 'Shanghai Innogen Pharmaceutical Technology Co., Ltd.', matterKey: '31', rate: '450' },
-  { clientName: 'Spark Biomedical Inc', matterKey: '22', rate: '400' },
-  { clientName: 'TCOYF Applications LLC', matterKey: '8', rate: '450' },
-  { clientName: 'Trucker\'s Body Shop, Inc.', matterKey: '15', rate: '450' },
-];
-
-let rmKeyRows = []; // Array of { clientName, matterKey, rate }
-
-function initRMKeyEditor(container) {
-  const uploadBtn = container.querySelector('#rmkey-upload-btn');
-  const fileInput = container.querySelector('#rmkey-file-input');
-  const saveBtn = container.querySelector('#rmkey-save-btn');
-  const clearBtn = container.querySelector('#rmkey-clear-btn');
-
-  // Upload Excel (secondary)
-  uploadBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    toast('Processing RM Key file...');
-    try {
-      const data = await uploadRMKey(file);
-      if (data.success) {
-        store.rmKeyLoaded = true;
-        store.rmKeyClients = data.clients;
-        rmKeyRows = data.clients.map(c => ({ clientName: c.clientName, matterKey: c.matterKey, rate: c.rate }));
-        renderRMKeyEditor(container);
-        updateRMKeyStatus(container);
-        toast(`RM Key loaded: ${data.clientCount} clients`);
-      } else {
-        toast(data.error || 'Upload failed', true);
-      }
-    } catch (err) {
-      toast('Upload failed: ' + err.message, true);
-    }
-    fileInput.value = '';
-  });
-
-  // Save manual edits
-  saveBtn.addEventListener('click', async () => {
-    collectRMKeyFromInputs(container);
-    const validRows = rmKeyRows.filter(r => r.clientName.trim());
-    try {
-      const data = await saveRMKeyManual(validRows);
-      if (data.success) {
-        store.rmKeyLoaded = true;
-        store.rmKeyClients = data.clients;
-        rmKeyRows = data.clients.map(c => ({ clientName: c.clientName, matterKey: c.matterKey, rate: c.rate }));
-        renderRMKeyEditor(container);
-        updateRMKeyStatus(container);
-        toast(`Saved: ${data.clientCount} clients`);
-      }
-    } catch (err) {
-      toast('Save failed: ' + err.message, true);
-    }
-  });
-
-  // Clear all
-  clearBtn.addEventListener('click', async () => {
-    const { clearRMKey } = await import('../api.js');
-    await clearRMKey();
-    store.rmKeyLoaded = false;
-    store.rmKeyClients = [];
-    rmKeyRows = [];
-    renderRMKeyEditor(container);
-    updateRMKeyStatus(container);
-    toast('Client mapping cleared');
-  });
-
-  // Pre-populate with defaults if no rows loaded, and auto-save to server
-  if (!rmKeyRows.length) {
-    rmKeyRows = DEFAULT_RM_KEYS.map(r => ({ ...r }));
-    // Auto-save defaults to server so RM Key mapping is active
-    saveRMKeyManual(rmKeyRows).then(data => {
-      if (data && data.success) {
-        store.rmKeyLoaded = true;
-        store.rmKeyClients = data.clients;
-        updateRMKeyStatus(container);
-      }
-    }).catch(() => {});
-  }
-  renderRMKeyEditor(container);
-}
-
-function renderRMKeyEditor(container) {
-  const editor = container.querySelector('#rmkey-editor');
-  if (!editor) return;
-
-  const saveBtn = container.querySelector('#rmkey-save-btn');
-  const clearBtn = container.querySelector('#rmkey-clear-btn');
-  const hasData = rmKeyRows.some(r => r.clientName.trim());
-  saveBtn.style.display = 'inline-flex';
-  clearBtn.style.display = hasData ? 'inline-flex' : 'none';
-
-  editor.innerHTML = `
-    <table style="width:100%;font-size:13px;border-collapse:collapse" id="rmkey-table">
-      <thead>
-        <tr style="border-bottom:1px solid var(--border)">
-          <th style="text-align:left;padding:6px 8px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px;font-weight:500;width:40%">CLIENT NAME</th>
-          <th style="text-align:left;padding:6px 8px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px;font-weight:500;width:25%">MATTER KEY</th>
-          <th style="text-align:left;padding:6px 8px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px;font-weight:500;width:20%">RATE ($)</th>
-          <th style="width:40px"></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rmKeyRows.map((row, i) => `
-          <tr data-row-idx="${i}" style="border-bottom:1px solid rgba(42,48,68,0.3)">
-            <td style="padding:3px 4px"><input type="text" class="rmkey-input rmkey-client" value="${escapeHtml(row.clientName || '')}" placeholder="Client name" data-idx="${i}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--fg);font-size:13px"></td>
-            <td style="padding:3px 4px"><input type="text" class="rmkey-input rmkey-key" value="${escapeHtml(row.matterKey || '')}" placeholder="Key" data-idx="${i}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--fg);font-variant-numeric:tabular-nums;font-size:13px"></td>
-            <td style="padding:3px 4px"><input type="number" class="rmkey-input rmkey-rate" value="${row.rate || ''}" placeholder="0" data-idx="${i}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--fg);font-variant-numeric:tabular-nums;font-size:13px" step="any"></td>
-            <td style="padding:3px 4px;text-align:center"><button class="btn btn-ghost btn-xs rmkey-delete-row" data-idx="${i}" style="color:var(--danger);font-size:1rem;padding:2px 6px" title="Remove row">&times;</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <button class="btn btn-ghost btn-sm" id="rmkey-add-row" style="margin-top:8px;font-size:12px">+ Add Row</button>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">Tip: Paste tab-separated rows (Client, Key, Rate) into the first cell to bulk-add</div>
-  `;
-
-  // Delete row
-  editor.querySelectorAll('.rmkey-delete-row').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.idx);
-      rmKeyRows.splice(idx, 1);
-      if (rmKeyRows.length === 0) rmKeyRows.push({ clientName: '', matterKey: '', rate: '' });
-      renderRMKeyEditor(container);
-    });
-  });
-
-  // Add row
-  editor.querySelector('#rmkey-add-row').addEventListener('click', () => {
-    collectRMKeyFromInputs(container);
-    rmKeyRows.push({ clientName: '', matterKey: '', rate: '' });
-    renderRMKeyEditor(container);
-    // Focus the new client name input
-    const inputs = editor.querySelectorAll('.rmkey-client');
-    if (inputs.length) inputs[inputs.length - 1].focus();
-  });
-
-  // Paste handler for bulk add
-  editor.querySelectorAll('.rmkey-client').forEach(input => {
-    input.addEventListener('paste', (e) => {
-      const pasted = (e.clipboardData || window.clipboardData).getData('text');
-      if (pasted.includes('\t') || pasted.includes('\n')) {
-        e.preventDefault();
-        collectRMKeyFromInputs(container);
-        const lines = pasted.split(/\r?\n/).filter(l => l.trim());
-        const newRows = [];
-        for (const line of lines) {
-          const parts = line.split('\t');
-          if (parts.length >= 1) {
-            newRows.push({
-              clientName: (parts[0] || '').trim(),
-              matterKey: (parts[1] || '').trim(),
-              rate: parseFloat(parts[2]) || '',
-            });
-          }
-        }
-        if (newRows.length) {
-          // Replace the current empty row if pasting into an empty one
-          const idx = parseInt(input.dataset.idx);
-          if (!rmKeyRows[idx]?.clientName?.trim()) {
-            rmKeyRows.splice(idx, 1, ...newRows);
-          } else {
-            rmKeyRows.push(...newRows);
-          }
-          renderRMKeyEditor(container);
-          toast(`Pasted ${newRows.length} rows`);
-        }
-      }
-    });
-  });
-}
-
-function collectRMKeyFromInputs(container) {
-  const table = container.querySelector('#rmkey-table');
-  if (!table) return;
-  const rows = table.querySelectorAll('tbody tr');
-  rows.forEach((tr, i) => {
-    const client = tr.querySelector('.rmkey-client')?.value || '';
-    const key = tr.querySelector('.rmkey-key')?.value || '';
-    const rate = tr.querySelector('.rmkey-rate')?.value || '';
-    if (rmKeyRows[i]) {
-      rmKeyRows[i].clientName = client;
-      rmKeyRows[i].matterKey = key;
-      rmKeyRows[i].rate = rate;
-    }
-  });
-}
-
-function updateRMKeyStatus(container) {
-  const statusEl = container.querySelector('#rmkey-status');
-  const validCount = rmKeyRows.filter(r => r.clientName?.trim()).length;
-  if (validCount > 0) {
-    statusEl.innerHTML = `<span style="color:var(--success)">&#10003;</span> ${validCount} clients configured`;
-    statusEl.style.color = 'var(--success)';
-  } else {
-    statusEl.textContent = 'No clients configured';
-    statusEl.style.color = 'var(--muted)';
-  }
-}
-
-async function loadRMKeyStatus(container) {
-  try {
-    const data = await getRMKeyStatus();
-    if (data.loaded && data.clients?.length) {
-      store.rmKeyLoaded = true;
-      store.rmKeyClients = data.clients;
-      rmKeyRows = data.clients.map(c => ({ clientName: c.clientName, matterKey: c.matterKey, rate: c.rate }));
-      renderRMKeyEditor(container);
-      updateRMKeyStatus(container);
-    }
-  } catch { /* ignore */ }
-}
 
 // ─── EXISTING FUNCTIONS (modified) ───
 

@@ -10,6 +10,7 @@ import { renderCalls } from './components/callsView.js';
 import { renderClients } from './components/clientBreakdown.js';
 import { renderSettings } from './components/settingsPanel.js';
 import { renderCalendar } from './components/calendarView.js';
+import { renderClientMapping, initClientMapping } from './components/clientMappingView.js';
 import { toast, debounce } from './utils.js';
 
 async function init() {
@@ -52,7 +53,11 @@ function showApp() {
   registerRoute('calls', renderCalls);
   registerRoute('calendar', renderCalendar);
   registerRoute('clients', renderClients);
+  registerRoute('client-mapping', renderClientMapping);
   registerRoute('settings', renderSettings);
+  // Eagerly load (or seed) the client mapping so Pull Data already has it
+  // — independent of whether the user visits the Client Mapping tab.
+  initClientMapping();
   initRouter();
   const globalSearch = document.getElementById('global-search');
   if (globalSearch) {

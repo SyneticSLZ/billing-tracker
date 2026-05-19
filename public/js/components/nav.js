@@ -3,6 +3,8 @@ import { navigate } from '../router.js';
 const navItems = [
   { section: 'Overview' },
   { id: 'dashboard', icon: 'D', label: 'Dashboard' },
+  { section: 'Setup' },
+  { id: 'client-mapping', icon: 'K', label: 'Client Mapping' },
   { section: 'Data Sources' },
   { id: 'emails', icon: 'E', label: 'Emails', countKey: 'email' },
   { id: 'teams', icon: 'T', label: 'Teams', countKey: 'teams' },
