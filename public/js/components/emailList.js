@@ -76,22 +76,44 @@ export function renderEmails(container) {
   const emailItems = store.billingItems.filter(i => i.type?.toLowerCase().includes('email'));
   refreshBillStatus(emailItems);
 
-  const combined = emailItems.filter(i => i.isConsolidated && !i.billingExcluded).length;
-  const flagged  = emailItems.filter(i => i.billingExcluded && !i.consolidatedInto).length;
+  // Per-bucket counts — drives both the visible breakdown chips and the
+  // DataTable's Status filter options.
+  const counts = {
+    [STATUS.BILLABLE.label]:    emailItems.filter(i => !i.billingExcluded && !i.isConsolidated && !i.consolidatedInto).length,
+    [STATUS.COMBINED.label]:    emailItems.filter(i => i.isConsolidated && !i.billingExcluded).length,
+    [STATUS.IN_COMBINED.label]: emailItems.filter(i => i.consolidatedInto).length,
+    [STATUS.INTERNAL.label]:    emailItems.filter(i => i.excludeKind === 'internal').length,
+    [STATUS.MEETING.label]:     emailItems.filter(i => i.excludeKind === 'meeting').length,
+    [STATUS.MANUAL.label]:      emailItems.filter(i => i.excludeKind === 'manual').length,
+    [STATUS.UNMERGED.label]:    emailItems.filter(i => i.isConsolidated && i.billingExcluded).length,
+  };
   const totalHours = emailItems
     .filter(i => !i.billingExcluded)
     .reduce((s, i) => s + (i.durationHours || 0.1), 0)
     .toFixed(1);
 
+  // Clickable chip per status — clicking one applies that filter immediately.
+  const chip = (label, count, color) => count
+    ? `<button data-chip-status="${label}" class="btn btn-ghost btn-xs" style="font-size:11px;padding:3px 9px;color:${color};border:1px solid ${color}33;background:${color}11" title="Click to filter">${label} <strong>${count}</strong></button>`
+    : '';
+
   container.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="margin-bottom:12px">
+      <h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         Emails
         <span style="font-size:13px;color:var(--muted);font-weight:400">${emailItems.length} total</span>
         <span style="font-size:12px;color:var(--success);font-weight:400">·  ${totalHours}h billable</span>
-        ${combined ? `<span style="font-size:12px;color:var(--accent);font-weight:400">·  ${combined} combined</span>` : ''}
-        ${flagged ? `<span style="font-size:12px;color:var(--muted);font-weight:400">·  ${flagged} flagged</span>` : ''}
       </h1>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button data-chip-status="" class="btn btn-ghost btn-xs" style="font-size:11px;padding:3px 9px;color:var(--muted);border:1px solid var(--border)" title="Clear status filter">All <strong>${emailItems.length}</strong></button>
+        ${chip(STATUS.BILLABLE.label,    counts[STATUS.BILLABLE.label],    STATUS.BILLABLE.color)}
+        ${chip(STATUS.COMBINED.label,    counts[STATUS.COMBINED.label],    STATUS.COMBINED.color)}
+        ${chip(STATUS.IN_COMBINED.label, counts[STATUS.IN_COMBINED.label], STATUS.IN_COMBINED.color)}
+        ${chip(STATUS.INTERNAL.label,    counts[STATUS.INTERNAL.label],    STATUS.INTERNAL.color)}
+        ${chip(STATUS.MEETING.label,     counts[STATUS.MEETING.label],     STATUS.MEETING.color)}
+        ${chip(STATUS.MANUAL.label,      counts[STATUS.MANUAL.label],      STATUS.MANUAL.color)}
+        ${chip(STATUS.UNMERGED.label,    counts[STATUS.UNMERGED.label],    STATUS.UNMERGED.color)}
+      </div>
     </div>
     <div id="emails-table-container"></div>`;
 
@@ -140,6 +162,22 @@ export function renderEmails(container) {
   });
   table.render();
 
+  // Status chips → apply (or clear) the DataTable's Status filter. Chips live
+  // outside the table container so they survive table.render() and double as
+  // a visible breakdown of how many emails landed in each bucket.
+  container.querySelectorAll('[data-chip-status]').forEach(b => {
+    b.addEventListener('click', () => {
+      const value = b.dataset.chipStatus;
+      table.filterValues = value ? { billStatus: value } : {};
+      table.page = 1;
+      table.render();
+      // Visual "active" cue on the chosen chip
+      container.querySelectorAll('[data-chip-status]').forEach(x => {
+        x.style.outline = x.dataset.chipStatus === value ? '2px solid currentColor' : 'none';
+      });
+    });
+  });
+
   // Action buttons — event delegation on the persistent container so it
   // survives DataTable re-renders (page/sort/search/filter).
   tc.addEventListener('click', async (e) => {
@@ -154,8 +192,8 @@ export function renderEmails(container) {
       toast('Action failed: ' + err.message, true);
       return;
     }
-    refreshBillStatus(emailItems);
-    table.render();
+    // Full re-render so chip counts + breakdown reflect the new state too.
+    renderEmails(container);
   });
 }
 
