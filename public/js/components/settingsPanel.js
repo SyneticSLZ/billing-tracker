@@ -44,10 +44,14 @@ export function renderSettings(container) {
           <label>Internal / non-billable addresses (Karisha &amp; Mark, firm domain)</label>
           <textarea id="setting-internal" rows="3" placeholder="karisha@firm.com, mark@firm.com, firm.com" style="width:100%;font-family:inherit"></textarea>
           <p style="font-size:11px;color:var(--muted);margin-top:6px">
-            Comma / newline separated. Full addresses or a whole domain. An email is flagged
-            non-billable only when <strong>every</strong> sender &amp; recipient is in this list —
-            anything involving a client stays billable. Flagged email stays visible and can be
-            added back from the Calendar view before export.
+            Comma / newline separated. Full addresses or a whole domain (e.g.
+            <code>@accountprotection.microsoft.com</code>). Your own signed-in address is
+            <strong>auto-included</strong> — you only need to add the <em>other</em> party
+            (Mark, firm domain, noreply senders, etc.). An email is flagged non-billable when
+            <strong>every</strong> sender &amp; recipient is in this list — anything involving
+            a client stays billable. Flagged email stays visible and can be added back from
+            the Calendar or Emails view before export.
+            <br><strong>Edits only apply on the next Pull Data</strong> — re-pull after saving.
           </p>
         </div>
       </div></div>

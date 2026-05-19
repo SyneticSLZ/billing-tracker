@@ -238,7 +238,15 @@ router.post('/fetch', requireAuth, async (req, res) => {
     // Items are flagged (billingExcluded / consolidatedInto), never dropped,
     // so everything stays visible in the UI and is reversible before export.
     sendEvent({ type: 'progress', message: 'Filtering internal & meeting email...', percent: 64, phase: 'filter' });
-    allItems = applyInternalFilter(allItems, req.session.internalAddresses);
+    // Auto-include the signed-in user's own address — every email pulled is
+    // to/from this mailbox, so requiring the user to add their own address
+    // to the list every time is needless friction (and was the cause of
+    // noreply senders not being flagged despite being in the list).
+    const selfEmail = req.session.account?.email || '';
+    const internalRaw = [selfEmail, req.session.internalAddresses || '']
+      .filter(Boolean)
+      .join('\n');
+    allItems = applyInternalFilter(allItems, internalRaw);
     allItems = applyMeetingInviteFilter(allItems);
     const excludedCount = allItems.filter(i => i.billingExcluded).length;
 
