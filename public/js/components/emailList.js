@@ -1,32 +1,220 @@
+// Emails tab — full audit surface.
+//
+// Every email is listed (billable, flagged non-billable, rolled-up children,
+// the combined parent entry). Each row carries a coloured status badge that
+// tells you AT A GLANCE why it will or won't export, with action buttons that
+// mirror the Calendar view so you can fix things from this page too. A Status
+// filter at the top isolates a single state (e.g. show me only what the
+// internal filter caught) so the page doubles as the verification tool before
+// uploading the XLSX to Rocket Matter.
+
 import { store } from '../state.js';
-import { escapeHtml, truncate } from '../utils.js';
+import { escapeHtml, truncate, toast } from '../utils.js';
 import { DataTable } from './dataTable.js';
 import { open as openDrilldown } from './drilldownPanel.js';
 import { openEditModal } from './editModal.js';
+import { setEntryExcluded } from '../api.js';
+
+const STATUS = {
+  BILLABLE:        { label: 'Billable',        color: 'var(--success)', emoji: '' },
+  COMBINED:        { label: 'Combined',        color: 'var(--accent)',  emoji: '🔗 ' },
+  IN_COMBINED:    { label: 'In combined',     color: 'var(--muted)',   emoji: '↳ ' },
+  INTERNAL:        { label: 'Internal',        color: '#e0a458',         emoji: '' },
+  MEETING:         { label: 'Meeting invite',  color: '#e0a458',         emoji: '' },
+  MANUAL:          { label: 'Manually excluded', color: 'var(--muted)', emoji: '' },
+  UNMERGED:        { label: 'Un-merged',       color: 'var(--muted)',   emoji: '' },
+  EXCLUDED:        { label: 'Excluded',        color: 'var(--muted)',   emoji: '' },
+};
+
+function statusFor(item) {
+  if (item.isConsolidated && !item.billingExcluded) return STATUS.COMBINED;
+  if (item.isConsolidated && item.billingExcluded)  return STATUS.UNMERGED;
+  if (item.consolidatedInto)                         return STATUS.IN_COMBINED;
+  if (item.excludeKind === 'internal')               return STATUS.INTERNAL;
+  if (item.excludeKind === 'meeting')                return STATUS.MEETING;
+  if (item.excludeKind === 'manual')                 return STATUS.MANUAL;
+  if (item.billingExcluded)                          return STATUS.EXCLUDED;
+  return STATUS.BILLABLE;
+}
+
+function refreshBillStatus(items) {
+  items.forEach(i => { i.billStatus = statusFor(i).label; });
+}
+
+function renderBadge(item) {
+  const s = statusFor(item);
+  const extra = item.isConsolidated ? ' (' + item.mergedCount + ')' : '';
+  const tip = item.excludeReason || (item.isConsolidated ? item.mergedCount + ' same-subject emails combined' : '');
+  return '<span style="color:' + s.color + ';font-size:11px;white-space:nowrap" title="' + escapeHtml(tip) + '">'
+       + s.emoji + s.label + extra + '</span>';
+}
+
+function renderActions(item) {
+  const id = escapeHtml(item.id);
+  if (item.isConsolidated && !item.billingExcluded) {
+    return btn('unmerge', id, 'un-merge', 'Split back into individual emails');
+  }
+  if (item.isConsolidated && item.billingExcluded) {
+    return btn('recombine', id, 'recombine', 'Re-combine into one entry', 'var(--accent)');
+  }
+  if (item.consolidatedInto) {
+    return btn('unmerge', id, 'split out', 'Split this group back into individual emails');
+  }
+  if (item.billingExcluded) {
+    return btn('addback', id, 'add back', escapeHtml(item.excludeReason || 'Add back to billing'), 'var(--success)');
+  }
+  return btn('exclude', id, 'exclude', 'Mark non-billable (reversible)', 'var(--muted)');
+}
+
+function btn(action, id, label, title, color) {
+  return '<button data-row-action="' + action + '" data-row-id="' + id + '" class="btn btn-ghost btn-xs"'
+       + (color ? ' style="color:' + color + ';padding:2px 6px"' : ' style="padding:2px 6px"')
+       + ' title="' + title + '">' + label + '</button>';
+}
+
 export function renderEmails(container) {
   const emailItems = store.billingItems.filter(i => i.type?.toLowerCase().includes('email'));
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px">Emails <span style="font-size:13px;color:var(--muted);font-weight:400">' + emailItems.length + ' entries</span></h1></div><div id="emails-table-container"></div>';
+  refreshBillStatus(emailItems);
+
+  const combined = emailItems.filter(i => i.isConsolidated && !i.billingExcluded).length;
+  const flagged  = emailItems.filter(i => i.billingExcluded && !i.consolidatedInto).length;
+  const totalHours = emailItems
+    .filter(i => !i.billingExcluded)
+    .reduce((s, i) => s + (i.durationHours || 0.1), 0)
+    .toFixed(1);
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h1 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        Emails
+        <span style="font-size:13px;color:var(--muted);font-weight:400">${emailItems.length} total</span>
+        <span style="font-size:12px;color:var(--success);font-weight:400">·  ${totalHours}h billable</span>
+        ${combined ? `<span style="font-size:12px;color:var(--accent);font-weight:400">·  ${combined} combined</span>` : ''}
+        ${flagged ? `<span style="font-size:12px;color:var(--muted);font-weight:400">·  ${flagged} flagged</span>` : ''}
+      </h1>
+    </div>
+    <div id="emails-table-container"></div>`;
+
+  const tc = container.querySelector('#emails-table-container');
+
   const table = new DataTable({
-    container: container.querySelector('#emails-table-container'),
+    container: tc,
     columns: [
-      { key: 'subject', label: 'Subject', sortable: true, class: 'truncate', render: (i) => escapeHtml(truncate(i.subject || 'No Subject', 60)) },
-      { key: 'participants', label: 'From', sortable: true, class: 'truncate muted', render: (i) => escapeHtml(truncate(i.participants || '', 30)) },
-      { key: 'folderName', label: 'Folder', sortable: true, class: 'mono muted', render: (i) => escapeHtml(truncate(i.folderName || '', 20)) },
-      { key: 'client', label: 'Client', sortable: true, class: 'client-cell', render: (i) => '<span class="' + ((!i.client || i.client.includes('UNKNOWN')) ? 'unknown' : '') + '">' + escapeHtml(i.client || 'UNKNOWN') + '</span>' + (i.rmKeyMatched ? ' <span style="color:var(--success);font-size:10px">matched</span>' : '') },
+      { key: 'subject', label: 'Subject', sortable: true, class: 'truncate',
+        render: (i) => escapeHtml(truncate(i.subject || 'No Subject', 60)) },
+      { key: 'participants', label: 'From', sortable: true, class: 'truncate muted',
+        render: (i) => escapeHtml(truncate(i.participants || '', 30)) },
+      { key: 'folderName', label: 'Folder', sortable: true, class: 'mono muted',
+        render: (i) => escapeHtml(truncate(i.folderName || '', 20)) },
+      { key: 'client', label: 'Client', sortable: true, class: 'client-cell',
+        render: (i) => '<span class="' + ((!i.client || i.client.includes('UNKNOWN')) ? 'unknown' : '') + '">'
+          + escapeHtml(i.client || 'UNKNOWN') + '</span>'
+          + (i.rmKeyMatched ? ' <span style="color:var(--success);font-size:10px">matched</span>' : '') },
       { key: 'date', label: 'Date', sortable: true, sortType: 'date', width: '90px', class: 'mono' },
-      { key: 'durationHours', label: 'Duration', sortable: true, sortType: 'number', width: '70px', render: (i) => '<span class="duration-chip"' + (i.billingExcluded ? ' style="text-decoration:line-through;opacity:0.6"' : '') + '>' + (i.durationHours || 0.1) + 'h</span>' },
-      { key: 'billStatus', label: 'Status', width: '120px', render: (i) => {
-          if (i.isConsolidated) return '<span style="color:var(--accent);font-size:11px" title="' + i.mergedCount + ' same-subject emails combined into one entry">🔗 combined (' + i.mergedCount + ')</span>';
-          if (i.consolidatedInto) return '<span style="color:var(--muted);font-size:11px" title="' + escapeHtml(i.excludeReason || '') + '">↳ in combined</span>';
-          if (i.billingExcluded) return '<span style="color:var(--muted);font-size:11px" title="' + escapeHtml(i.excludeReason || '') + '">excluded</span>';
-          return '<span style="color:var(--success);font-size:11px">billable</span>';
-        } },
-      { key: 'activityDescription', label: 'Description', class: 'truncate muted', render: (i) => escapeHtml(truncate(i.activityDescription || '', 40)) },
+      { key: 'durationHours', label: 'Duration', sortable: true, sortType: 'number', width: '80px',
+        render: (i) => '<span class="duration-chip"'
+          + (i.billingExcluded ? ' style="text-decoration:line-through;opacity:0.6"' : '')
+          + '>' + (i.durationHours || 0.1) + 'h</span>' },
+      { key: 'billStatus', label: 'Status', sortable: true, width: '140px', render: renderBadge },
+      { key: 'activityDescription', label: 'Description', class: 'truncate muted',
+        render: (i) => escapeHtml(truncate(i.activityDescription || '', 40)) },
+      { key: '_actions', label: '', width: '110px', render: renderActions },
     ],
-    data: emailItems, pageSize: store.settings.pageSize || 50, sortColumn: 'date', sortDir: 'desc',
+    data: emailItems,
+    pageSize: store.settings.pageSize || 50,
+    sortColumn: 'date',
+    sortDir: 'desc',
     searchFields: ['subject', 'participants', 'client', 'activityDescription', 'bodyPreview', 'folderName'],
-    emptyMessage: 'No emails found', emptyIcon: '',
-    onRowClick: (item) => { openDrilldown('email', item, () => openEditModal(item, () => renderEmails(container))); }
+    filters: [
+      { key: 'billStatus', label: 'Status', options: [
+        STATUS.BILLABLE.label, STATUS.COMBINED.label, STATUS.IN_COMBINED.label,
+        STATUS.INTERNAL.label, STATUS.MEETING.label, STATUS.MANUAL.label,
+        STATUS.UNMERGED.label,
+      ] },
+    ],
+    emptyMessage: 'No emails found',
+    emptyIcon: '',
+    onRowClick: (item) => {
+      openDrilldown('email', item, () => openEditModal(item, () => renderEmails(container)));
+    },
   });
   table.render();
+
+  // Action buttons — event delegation on the persistent container so it
+  // survives DataTable re-renders (page/sort/search/filter).
+  tc.addEventListener('click', async (e) => {
+    const btnEl = e.target.closest('[data-row-action]');
+    if (!btnEl) return;
+    e.stopPropagation();
+    const id = btnEl.dataset.rowId;
+    const action = btnEl.dataset.rowAction;
+    try {
+      await dispatchAction(action, id);
+    } catch (err) {
+      toast('Action failed: ' + err.message, true);
+      return;
+    }
+    refreshBillStatus(emailItems);
+    table.render();
+  });
+}
+
+// Mirrors the calendarView reversible-action semantics. Mutates the matching
+// item(s) in store.billingItems in place and persists via PUT /api/entry/:id
+// (no re-fetch — toggles are flag-only).
+async function dispatchAction(action, id) {
+  const findGroupFor = (item) => {
+    if (item?.isConsolidated) return item;
+    return store.billingItems.find(g => g.isConsolidated && (g.mergedSourceIds || []).includes(item?.id));
+  };
+  const apply = async (updates) => {
+    for (const u of updates) {
+      const local = store.billingItems.find(i => i.id === u.id);
+      if (local) Object.assign(local, u.fields);
+      await setEntryExcluded(u.id, !!u.fields.billingExcluded, u.fields);
+    }
+  };
+
+  if (action === 'exclude') {
+    await apply([{ id, fields: { billingExcluded: true, excludeReason: 'Manually excluded', excludeKind: 'manual' } }]);
+    toast('Excluded — use “add back” to undo');
+    return;
+  }
+  if (action === 'addback') {
+    await apply([{ id, fields: { billingExcluded: false, excludeReason: '', excludeKind: '' } }]);
+    toast('Added back to billing');
+    return;
+  }
+  if (action === 'unmerge') {
+    const item = store.billingItems.find(i => i.id === id);
+    const group = findGroupFor(item);
+    if (!group) return;
+    const updates = [
+      { id: group.id, fields: { billingExcluded: true, excludeReason: 'Un-merged (split back to individual emails)', excludeKind: 'unmerged-group' } },
+      ...(group.mergedSourceIds || []).map(cid => ({
+        id: cid, fields: { billingExcluded: false, consolidatedInto: null, excludeReason: '', excludeKind: '' },
+      })),
+    ];
+    await apply(updates);
+    toast(`Un-merged — ${group.mergedSourceIds.length} individual emails restored`);
+    return;
+  }
+  if (action === 'recombine') {
+    const group = store.billingItems.find(i => i.id === id);
+    if (!group) return;
+    const groupKey = String(group.id).replace(/^group-/, '');
+    const updates = [
+      { id: group.id, fields: { billingExcluded: false, excludeReason: '', excludeKind: '' } },
+      ...(group.mergedSourceIds || []).map(cid => ({
+        id: cid, fields: {
+          billingExcluded: true,
+          consolidatedInto: groupKey,
+          excludeReason: `Rolled into combined entry (${group.mergedSourceIds.length} emails, same subject/day)`,
+          excludeKind: 'consolidated-child',
+        },
+      })),
+    ];
+    await apply(updates);
+    toast('Re-combined into one entry');
+  }
 }
